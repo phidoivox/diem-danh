@@ -367,15 +367,15 @@
   - Màn hình duyệt đơn xin nghỉ phép: xem ảnh giấy khám bệnh dạng modal phóng to, bấm Duyệt / Từ chối kèm phản hồi.
   - Xuất báo cáo cấm thi: hiển thị tỷ lệ vắng và nút tải file Excel (.xlsx).
 
-- [ ] **Step 1: Xây dựng trang Danh sách lớp (`/teacher/classes`)**
+- [x] **Step 1: Xây dựng trang Danh sách lớp (`/teacher/classes`)**
   - Hiển thị danh sách lớp học phần phụ trách, tổng số sinh viên, số buổi đã học.
-- [ ] **Step 2: Xây dựng trang Sĩ số thời gian thực (`/teacher/classes/[id]/live`)**
+- [x] **Step 2: Xây dựng trang Sĩ số thời gian thực (`/teacher/classes/[id]/live`)**
   - Giao diện Live Room: Tự động refresh hoặc qua polling kiểm tra sĩ số, lọc sinh viên chưa tới lớp, sinh viên vi phạm đồng phục.
   - Tích hợp modal sửa điểm thủ công cho từng sinh viên.
-- [ ] **Step 3: Xây dựng trang Duyệt đơn nghỉ phép (`/teacher/leave-reviews`)**
+- [x] **Step 3: Xây dựng trang Duyệt đơn nghỉ phép (`/teacher/leave-reviews`)**
   - Tab "Chờ duyệt" và "Lịch sử duyệt".
   - Xem chi tiết đơn, xem ảnh giấy khám bệnh (phóng to/thu nhỏ), form nhập feedback và nút Chấp nhận/Từ chối.
-- [ ] **Step 4: Xây dựng trang Báo cáo Cấm thi (`/teacher/reports`)**
+- [x] **Step 4: Xây dựng trang Báo cáo Cấm thi (`/teacher/reports`)**
   - Bảng danh sách sinh viên có nguy cơ bị cấm thi ($\ge 15\%$) và danh sách chính thức bị cấm thi ($\ge 20\%$).
   - Nút "Xuất báo cáo Excel" tải trực tiếp file `.xlsx` về máy.
 

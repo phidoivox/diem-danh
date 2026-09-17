@@ -222,6 +222,246 @@ export async function submitLeaveRequest(formData: FormData): Promise<StudentLea
   });
 }
 
+// =====================================================================
+// TEACHER PORTAL API DEFINITIONS
+// =====================================================================
+export interface TeacherClass {
+  id: number;
+  class_code: string;
+  course_name: string;
+  teacher_id: number;
+  semester: string;
+  total_sessions: number;
+  student_count: number;
+}
+
+export interface LiveAttendanceStudent {
+  attendance_id: number | null;
+  student_id: number;
+  student_code: string;
+  full_name: string;
+  class_name: string;
+  check_in_time: string | null;
+  check_out_time: string | null;
+  has_uniform: boolean;
+  status: "PRESENT" | "LATE" | "HALF_ABSENT" | "ABSENT" | "EXCUSED" | string;
+  is_manual_override: boolean;
+}
+
+export interface LiveAttendanceResponse {
+  class_id: number;
+  class_code: string;
+  course_name: string;
+  schedule_id: number | null;
+  study_date: string | null;
+  start_time: string | null;
+  end_time: string | null;
+  room_name: string | null;
+  total_students: number;
+  checked_in_count: number;
+  absent_count: number;
+  uniform_violation_count: number;
+  students: LiveAttendanceStudent[];
+  // Extended helper fields
+  class_info?: {
+    id: number;
+    class_code: string;
+    course_name: string;
+  };
+  schedule_info?: {
+    schedule_id: number | null;
+    study_date: string | null;
+    start_time: string | null;
+    end_time: string | null;
+    room_name: string | null;
+  };
+  stats?: {
+    total_students: number;
+    checked_in_count: number;
+    absent_count: number;
+    uniform_violation_count: number;
+  };
+}
+
+export interface TeacherLeaveRequest {
+  id: number;
+  schedule_id: number;
+  student_id: number;
+  reason: string;
+  proof_image: string | null;
+  status: "PENDING" | "APPROVED" | "REJECTED" | string;
+  teacher_feedback: string | null;
+  reviewed_by: number | null;
+  reviewed_at: string | null;
+  created_at: string;
+  course_name?: string | null;
+  class_code?: string | null;
+  study_date?: string | null;
+  start_time?: string | null;
+  end_time?: string | null;
+  room_name?: string | null;
+  student_code?: string | null;
+  student_name?: string | null;
+  student_email?: string | null;
+  avatar_url?: string | null;
+  class_name?: string | null;
+}
+
+export interface TeacherLeaveRequestPage {
+  items: TeacherLeaveRequest[];
+  total: number;
+  page: number;
+  size: number;
+}
+
+export interface ExamBanStudent {
+  student_id: number;
+  student_code: string;
+  full_name: string;
+  class_name?: string;
+  course_name?: string;
+  class_code?: string;
+  absent_count: number;
+  half_absent_count: number;
+  late_count?: number;
+  present_count?: number;
+  excused_count?: number;
+  converted_absent?: number;
+  cumulative_rate?: number;
+  rate_cumulative?: number;
+  semester_rate?: number;
+  rate_semester?: number;
+  is_warning: boolean;
+  is_banned: boolean;
+  status_label: "BỊ CẤM THI" | "CẢNH BÁO" | "ĐỦ ĐIỀU KIỆN" | string;
+}
+
+export interface ExamBanReport {
+  class_id?: number;
+  class_code: string;
+  course_name: string;
+  semester?: string;
+  teacher_name?: string;
+  total_sessions: number;
+  elapsed_sessions: number;
+  students: ExamBanStudent[];
+}
+
+export async function getTeacherClasses(): Promise<TeacherClass[]> {
+  return authFetch<TeacherClass[]>("/api/v1/teacher/classes");
+}
+
+export async function getTeacherLiveAttendance(classId: number): Promise<LiveAttendanceResponse> {
+  const data = await authFetch<LiveAttendanceResponse>(`/api/v1/teacher/classes/${classId}/live-attendance`);
+  data.class_info = {
+    id: data.class_id,
+    class_code: data.class_code,
+    course_name: data.course_name,
+  };
+  data.schedule_info = {
+    schedule_id: data.schedule_id,
+    study_date: data.study_date,
+    start_time: data.start_time,
+    end_time: data.end_time,
+    room_name: data.room_name,
+  };
+  data.stats = {
+    total_students: data.total_students,
+    checked_in_count: data.checked_in_count,
+    absent_count: data.absent_count,
+    uniform_violation_count: data.uniform_violation_count,
+  };
+  return data;
+}
+
+export async function manualOverrideAttendance(
+  attendanceId: number,
+  data: { status: string; note?: string; schedule_id?: number; student_id?: number }
+): Promise<any> {
+  return authFetch(`/api/v1/teacher/attendance/${attendanceId}/manual-override`, {
+    method: "PUT",
+    body: JSON.stringify(data),
+  });
+}
+
+export async function getTeacherLeaveRequests(params?: {
+  status?: string;
+  class_id?: number;
+  page?: number;
+  size?: number;
+}): Promise<TeacherLeaveRequestPage> {
+  const searchParams = new URLSearchParams();
+  if (params?.status && params.status !== "ALL") searchParams.append("status", params.status);
+  if (params?.class_id) searchParams.append("class_id", String(params.class_id));
+  if (params?.page) searchParams.append("page", String(params.page));
+  searchParams.append("size", String(params?.size || 100));
+
+  const qs = searchParams.toString();
+  return authFetch<TeacherLeaveRequestPage>(`/api/v1/teacher/leave-requests${qs ? `?${qs}` : ""}`);
+}
+
+export async function reviewLeaveRequest(
+  id: number,
+  data: { status: "APPROVED" | "REJECTED"; feedback?: string }
+): Promise<TeacherLeaveRequest> {
+  return authFetch<TeacherLeaveRequest>(`/api/v1/teacher/leave-requests/${id}/review`, {
+    method: "POST",
+    body: JSON.stringify(data),
+  });
+}
+
+export async function getTeacherExamBanReport(classId: number): Promise<ExamBanReport> {
+  const res = await authFetch<ExamBanReport>(`/api/v1/teacher/classes/${classId}/exam-ban-report`);
+  if (res && Array.isArray(res.students)) {
+    res.students = res.students.map((st: any) => ({
+      ...st,
+      cumulative_rate: st.cumulative_rate ?? st.rate_cumulative ?? 0,
+      semester_rate: st.semester_rate ?? st.rate_semester ?? 0,
+    }));
+  }
+  return res;
+}
+
+export async function downloadTeacherExamBanExcel(classId: number, filename?: string): Promise<void> {
+  const token = getToken();
+  const headers: Record<string, string> = {};
+  if (token) {
+    headers["Authorization"] = `Bearer ${token}`;
+  }
+  const res = await fetch(`${API}/api/v1/teacher/classes/${classId}/export-exam-ban-excel`, {
+    headers,
+  });
+  if (!res.ok) {
+    let errMsg = "Không thể tải file Excel báo cáo cấm thi";
+    try {
+      const errJson = await res.json();
+      errMsg = errJson.detail || errMsg;
+    } catch {
+      // ignore
+    }
+    throw new Error(errMsg);
+  }
+  const disposition = res.headers.get("Content-Disposition");
+  let downloadName = filename;
+  if (!downloadName && disposition) {
+    const match = disposition.match(/filename="?([^"]+)"?/);
+    if (match && match[1]) downloadName = match[1];
+  }
+  if (!downloadName) {
+    downloadName = `cam_thi_lop_${classId}.xlsx`;
+  }
+
+  const blob = await res.blob();
+  const url = window.URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = downloadName;
+  document.body.appendChild(a);
+  a.click();
+  window.URL.revokeObjectURL(url);
+  document.body.removeChild(a);
+}
+
 // Legacy & Utility API definitions
 export type Att = { id: number; code: string; uniform: string; violations: string; snapshot: string; at: string };
 export type Student = { id: number; code: string; name: string; class_name: string; photo?: string };

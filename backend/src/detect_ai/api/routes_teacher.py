@@ -72,6 +72,8 @@ class LiveAttendanceResponse(BaseModel):
 class ManualOverrideRequest(BaseModel):
     status: AttendanceStatus
     note: Optional[str] = Field("", max_length=255)
+    schedule_id: Optional[int] = None
+    student_id: Optional[int] = None
 
 
 class AttendanceDetailResponse(BaseModel):
@@ -279,18 +281,57 @@ async def manual_override_attendance(
     current_user: User = Depends(require_role("TEACHER")),
     db: AsyncSession = Depends(get_db),
 ):
-    stmt = (
-        select(Attendance)
-        .options(selectinload(Attendance.schedule).selectinload(Schedule.clazz))
-        .where(Attendance.id == attendance_id)
-    )
-    result = await db.execute(stmt)
-    att = result.scalar_one_or_none()
-    if not att:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Không tìm thấy bản ghi điểm danh",
+    att = None
+    if attendance_id > 0:
+        stmt = (
+            select(Attendance)
+            .options(selectinload(Attendance.schedule).selectinload(Schedule.clazz))
+            .where(Attendance.id == attendance_id)
         )
+        result = await db.execute(stmt)
+        att = result.scalar_one_or_none()
+
+    if not att:
+        if body.schedule_id and body.student_id:
+            # Check if schedule exists and belongs to current teacher
+            sched_stmt = (
+                select(Schedule)
+                .options(selectinload(Schedule.clazz))
+                .where(Schedule.id == body.schedule_id)
+            )
+            sched_res = await db.execute(sched_stmt)
+            sched = sched_res.scalar_one_or_none()
+            if not sched or not sched.clazz or sched.clazz.teacher_id != current_user.id:
+                raise HTTPException(
+                    status_code=status.HTTP_403_FORBIDDEN,
+                    detail="Bạn không có quyền can thiệp điểm danh của buổi học này",
+                )
+
+            # Check if attendance already exists for this student in this schedule
+            exist_stmt = select(Attendance).where(
+                Attendance.schedule_id == body.schedule_id,
+                Attendance.student_id == body.student_id,
+            )
+            att = (await db.execute(exist_stmt)).scalar_one_or_none()
+            if not att:
+                att = Attendance(
+                    schedule_id=body.schedule_id,
+                    student_id=body.student_id,
+                    has_uniform=True,
+                    status=body.status,
+                    note=body.note or "",
+                    is_manual_override=True,
+                    updated_by=current_user.id,
+                )
+                db.add(att)
+                await db.commit()
+                await db.refresh(att)
+                return att
+        else:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Không tìm thấy bản ghi điểm danh",
+            )
 
     if not att.schedule or not att.schedule.clazz or att.schedule.clazz.teacher_id != current_user.id:
         raise HTTPException(
