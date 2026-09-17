@@ -462,6 +462,321 @@ export async function downloadTeacherExamBanExcel(classId: number, filename?: st
   document.body.removeChild(a);
 }
 
+// =====================================================================
+// ADMIN PORTAL API DEFINITIONS
+// =====================================================================
+export interface AdminStudentProfile {
+  id: number;
+  user_id: number;
+  total_point: number;
+  class_name: string;
+  major: string;
+}
+
+export interface AdminTeacherProfile {
+  id: number;
+  user_id: number;
+  department: string;
+  academic_title: string;
+  office_room: string;
+}
+
+export interface AdminUser {
+  id: number;
+  user_code: string;
+  full_name: string;
+  email: string;
+  role: string;
+  role_name?: string;
+  is_active: boolean;
+  avatar_url?: string | null;
+  created_at?: string | null;
+  student_profile?: AdminStudentProfile | null;
+  teacher_profile?: AdminTeacherProfile | null;
+}
+
+export interface AdminUserPage {
+  items: AdminUser[];
+  total: number;
+  page: number;
+  size: number;
+}
+
+export interface AdminClass {
+  id: number;
+  class_code: string;
+  course_name: string;
+  teacher_id: number;
+  teacher_name: string;
+  semester: string;
+  total_sessions: number;
+  student_count: number;
+}
+
+export interface AdminClassPage {
+  items: AdminClass[];
+  total: number;
+  page: number;
+  size: number;
+}
+
+export interface StudentInClass {
+  id: number;
+  user_code: string;
+  full_name: string;
+  email: string;
+  class_name?: string;
+  major?: string;
+  total_point?: number;
+}
+
+export interface AdminSchedule {
+  id: number;
+  class_id: number;
+  class_code?: string | null;
+  course_name?: string | null;
+  room_name: string;
+  study_date: string;
+  start_time: string;
+  end_time: string;
+  session_order: number;
+}
+
+export type SystemSettingsMap = { [key: string]: string };
+
+export interface SystemSettingItem {
+  id: number;
+  key: string;
+  value: string;
+  description?: string | null;
+}
+
+export interface SystemSettingsResponse {
+  settings: SystemSettingsMap;
+  items: SystemSettingItem[];
+}
+
+export interface EvaluationResult {
+  target_date: string;
+  schedules_evaluated: number;
+  students_evaluated: number;
+  total_records: number;
+}
+
+export async function getAdminUsers(params?: {
+  page?: number;
+  size?: number;
+  role?: string;
+  q?: string;
+}): Promise<AdminUserPage> {
+  const sp = new URLSearchParams();
+  if (params?.page) sp.append("page", String(params.page));
+  if (params?.size) sp.append("size", String(params.size));
+  if (params?.role && params.role !== "ALL") sp.append("role", params.role);
+  if (params?.q) sp.append("q", params.q);
+  const qs = sp.toString();
+  const res = await authFetch<AdminUserPage>(`/api/v1/admin/users${qs ? `?${qs}` : ""}`);
+  if (res && Array.isArray(res.items)) {
+    res.items = res.items.map((u) => ({
+      ...u,
+      role_name: u.role_name || u.role,
+    }));
+  }
+  return res;
+}
+
+export async function createAdminUser(data: any): Promise<AdminUser> {
+  const res = await authFetch<AdminUser>("/api/v1/admin/users", {
+    method: "POST",
+    body: JSON.stringify(data),
+  });
+  if (res) {
+    res.role_name = res.role_name || res.role;
+  }
+  return res;
+}
+
+export async function updateAdminUser(id: number, data: any): Promise<AdminUser> {
+  const res = await authFetch<AdminUser>(`/api/v1/admin/users/${id}`, {
+    method: "PUT",
+    body: JSON.stringify(data),
+  });
+  if (res) {
+    res.role_name = res.role_name || res.role;
+  }
+  return res;
+}
+
+export async function deleteAdminUser(id: number): Promise<{ ok: boolean; message: string }> {
+  return authFetch<{ ok: boolean; message: string }>(`/api/v1/admin/users/${id}`, {
+    method: "DELETE",
+  });
+}
+
+export async function enrollUserFace(
+  id: number,
+  file: File
+): Promise<{ ok: boolean; user_id: number; face_enrolled: boolean }> {
+  const fd = new FormData();
+  fd.append("photo", file);
+  return authFetch<{ ok: boolean; user_id: number; face_enrolled: boolean }>(
+    `/api/v1/admin/users/${id}/face-enroll`,
+    {
+      method: "POST",
+      body: fd,
+    }
+  );
+}
+
+export async function getAdminClasses(params?: {
+  page?: number;
+  size?: number;
+  q?: string;
+}): Promise<AdminClassPage> {
+  const sp = new URLSearchParams();
+  if (params?.page) sp.append("page", String(params.page));
+  if (params?.size) sp.append("size", String(params.size));
+  if (params?.q) sp.append("q", params.q);
+  const qs = sp.toString();
+  return authFetch<AdminClassPage>(`/api/v1/admin/academic/classes${qs ? `?${qs}` : ""}`);
+}
+
+export async function createAdminClass(data: any): Promise<AdminClass> {
+  return authFetch<AdminClass>("/api/v1/admin/academic/classes", {
+    method: "POST",
+    body: JSON.stringify(data),
+  });
+}
+
+export async function updateAdminClass(id: number, data: any): Promise<AdminClass> {
+  return authFetch<AdminClass>(`/api/v1/admin/academic/classes/${id}`, {
+    method: "PUT",
+    body: JSON.stringify(data),
+  });
+}
+
+export async function deleteAdminClass(id: number): Promise<{ ok: boolean; message: string }> {
+  return authFetch<{ ok: boolean; message: string }>(`/api/v1/admin/academic/classes/${id}`, {
+    method: "DELETE",
+  });
+}
+
+export async function getAdminClassStudents(classId: number): Promise<StudentInClass[]> {
+  return authFetch<StudentInClass[]>(`/api/v1/admin/academic/classes/${classId}/students`);
+}
+
+export async function addStudentToClass(
+  classId: number,
+  studentId: number
+): Promise<{ ok: boolean; class_id: number; student_id: number }> {
+  return authFetch<{ ok: boolean; class_id: number; student_id: number }>(
+    `/api/v1/admin/academic/classes/${classId}/students`,
+    {
+      method: "POST",
+      body: JSON.stringify({ student_id: studentId }),
+    }
+  );
+}
+
+export async function removeStudentFromClass(
+  classId: number,
+  studentId: number
+): Promise<{ ok: boolean; message: string }> {
+  return authFetch<{ ok: boolean; message: string }>(
+    `/api/v1/admin/academic/classes/${classId}/students/${studentId}`,
+    {
+      method: "DELETE",
+    }
+  );
+}
+
+export async function getAdminSchedules(params?: {
+  class_id?: number;
+  study_date?: string;
+  room_name?: string;
+}): Promise<AdminSchedule[]> {
+  const sp = new URLSearchParams();
+  if (params?.class_id) sp.append("class_id", String(params.class_id));
+  if (params?.study_date) sp.append("study_date", params.study_date);
+  if (params?.room_name) sp.append("room_name", params.room_name);
+  const qs = sp.toString();
+  return authFetch<AdminSchedule[]>(`/api/v1/admin/academic/schedules${qs ? `?${qs}` : ""}`);
+}
+
+export async function createAdminSchedule(data: any): Promise<AdminSchedule> {
+  return authFetch<AdminSchedule>("/api/v1/admin/academic/schedules", {
+    method: "POST",
+    body: JSON.stringify(data),
+  });
+}
+
+export async function deleteAdminSchedule(id: number): Promise<{ ok: boolean; message: string }> {
+  return authFetch<{ ok: boolean; message: string }>(`/api/v1/admin/academic/schedules/${id}`, {
+    method: "DELETE",
+  });
+}
+
+export async function getAdminSettings(): Promise<SystemSettingsResponse> {
+  return authFetch<SystemSettingsResponse>("/api/v1/admin/settings");
+}
+
+export async function updateAdminSettings(
+  settings: Record<string, string>
+): Promise<SystemSettingsResponse> {
+  return authFetch<SystemSettingsResponse>("/api/v1/admin/settings", {
+    method: "PUT",
+    body: JSON.stringify(settings),
+  });
+}
+
+export async function triggerNightlyEvaluation(targetDate?: string): Promise<EvaluationResult> {
+  const sp = new URLSearchParams();
+  if (targetDate) sp.append("target_date", targetDate);
+  const qs = sp.toString();
+  return authFetch<EvaluationResult>(`/api/v1/admin/evaluation/run-now${qs ? `?${qs}` : ""}`, {
+    method: "POST",
+  });
+}
+
+export async function downloadAllSchoolExamBanExcel(
+  filename = "danh_sach_cam_thi_toan_truong.xlsx"
+): Promise<void> {
+  const token = getToken();
+  const headers: Record<string, string> = {};
+  if (token) {
+    headers["Authorization"] = `Bearer ${token}`;
+  }
+  const res = await fetch(`${API}/api/v1/admin/reports/export-exam-ban-all-excel`, {
+    headers,
+  });
+  if (!res.ok) {
+    let errMsg = "Không thể tải file Excel danh sách cấm thi toàn trường";
+    try {
+      const errJson = await res.json();
+      errMsg = errJson.detail || errMsg;
+    } catch {
+      // ignore
+    }
+    throw new Error(errMsg);
+  }
+  const disposition = res.headers.get("Content-Disposition");
+  let downloadName = filename;
+  if (disposition) {
+    const match = disposition.match(/filename="?([^"]+)"?/);
+    if (match && match[1]) downloadName = match[1];
+  }
+
+  const blob = await res.blob();
+  const url = window.URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = downloadName;
+  document.body.appendChild(a);
+  a.click();
+  window.URL.revokeObjectURL(url);
+  document.body.removeChild(a);
+}
+
 // Legacy & Utility API definitions
 export type Att = { id: number; code: string; uniform: string; violations: string; snapshot: string; at: string };
 export type Student = { id: number; code: string; name: string; class_name: string; photo?: string };

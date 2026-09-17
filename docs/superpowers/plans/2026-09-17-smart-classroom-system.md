@@ -399,16 +399,16 @@
   - Cấu hình Tham số Hệ thống (Điểm cộng/trừ, thời gian cho phép trễ, chế độ bắt buộc check-out).
   - Báo cáo Học vụ toàn trường & Nút kích hoạt chạy Cron 23h59 ngay ("Chạy tính điểm hôm nay").
 
-- [ ] **Step 1: Xây dựng trang Quản lý Người dùng (`/admin/users`)**
+- [x] **Step 1: Xây dựng trang Quản lý Người dùng (`/admin/users`)**
   - Bảng dữ liệu người dùng (phân loại Sinh viên, Giảng viên), tìm kiếm theo tên hoặc mã.
   - Modal thêm người dùng: hỗ trợ tải ảnh chân dung và hiển thị trạng thái sinh vector FaceID.
-- [ ] **Step 2: Xây dựng trang Quản lý Lớp & TKB (`/admin/academic`)**
+- [x] **Step 2: Xây dựng trang Quản lý Lớp & TKB (`/admin/academic`)**
   - Quản lý danh sách lớp, danh sách sinh viên trong lớp.
   - Quản lý Thời khóa biểu: Form xếp lịch có validate hiển thị cảnh báo nếu phòng học bị trùng lịch.
-- [ ] **Step 3: Xây dựng trang Cấu hình Hệ thống (`/admin/settings`)**
+- [x] **Step 3: Xây dựng trang Cấu hình Hệ thống (`/admin/settings`)**
   - Form cấu hình các tham số điểm thưởng/phạt, thời gian trễ, bật/tắt yêu cầu Check-out.
   - Nút "Kích hoạt Chạy tính điểm ngay (Run Now)" kèm thông báo kết quả.
-- [ ] **Step 4: Xây dựng trang Báo cáo Tổng hợp (`/admin/reports`)**
+- [x] **Step 4: Xây dựng trang Báo cáo Tổng hợp (`/admin/reports`)**
   - Thống kê toàn trường về tỷ lệ chuyên cần và danh sách cấm thi theo từng khoa/lớp.
 
 ---
