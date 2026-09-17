@@ -450,19 +450,19 @@
 - Consumes: Toàn bộ hệ thống Backend, Supabase và Frontend
 - Produces: Bộ test E2E kiểm tra toàn bộ kịch bản nghiệp vụ; Tài liệu cấu hình Supabase và hướng dẫn chạy hệ thống.
 
-- [ ] **Step 1: Viết test E2E cho kịch bản hoàn chỉnh (`test_e2e_flow.py`)**
+- [x] **Step 1: Viết test E2E cho kịch bản hoàn chỉnh (`test_e2e_flow.py`)**
   - Kịch bản 1: Sinh viên đi học đúng giờ, check-in, check-out, có đồng phục -> Cron 23h59 cộng 2 điểm.
   - Kịch bản 2: Sinh viên quên check-out -> Cron 23h59 đánh vắng nửa buổi, trừ 2 điểm.
   - Kịch bản 3: Sinh viên vắng nộp đơn kèm ảnh giấy khám bệnh -> Giảng viên duyệt -> Cập nhật nghỉ có phép, không trừ điểm.
   - Kịch bản 4: Giảng viên duyệt đơn muộn sau 23h59 -> Hệ thống hoàn điểm tự động.
   - Kịch bản 5: Sinh viên vắng quá 20% số buổi -> Xuất hiện trong danh sách cấm thi và file Excel.
-- [ ] **Step 2: Chạy toàn bộ test suite backend**
+- [x] **Step 2: Chạy toàn bộ test suite backend**
   - Run: `pytest backend/tests -v`
   - Expected: ALL TESTS PASS.
-- [ ] **Step 3: Soạn thảo tài liệu thiết lập CSDL Supabase (`docs/DATABASE_SETUP_GUIDE.md`)**
+- [x] **Step 3: Soạn thảo tài liệu thiết lập CSDL Supabase (`docs/DATABASE_SETUP_GUIDE.md`)**
   - Hướng dẫn tạo Project trên Supabase.
   - Hướng dẫn chạy DDL script `01_schema.sql` và `02_seed.sql`.
   - Hướng dẫn tạo 2 Storage bucket `leave-proofs` và `avatars` với quyền public/signed URL.
   - Hướng dẫn cấu hình biến môi trường trong file `.env`.
-- [ ] **Step 4: Cập nhật tài liệu vận hành `README.md`**
+- [x] **Step 4: Cập nhật tài liệu vận hành `README.md`**
   - Cập nhật hướng dẫn khởi chạy cả Backend, AI Kiosk và Frontend Next.js.

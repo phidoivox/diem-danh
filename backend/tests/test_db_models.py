@@ -1,3 +1,6 @@
+import shutil
+from pathlib import Path
+
 import pytest
 from datetime import date, time, datetime, timezone
 import pytest_asyncio
@@ -359,27 +362,36 @@ async def test_schedule_check_constraint(test_db_session: AsyncSession):
 
 
 @pytest.mark.asyncio
-async def test_supabase_storage_local_fallback(tmp_path):
+async def test_supabase_storage_local_fallback():
     from detect_ai.core.supabase import SupabaseStorageHelper
 
-    storage = SupabaseStorageHelper(supabase_url="", service_key="", storage_dir=tmp_path)
-    url = await storage.upload_file(
-        bucket=SupabaseStorageHelper.BUCKET_LEAVE_PROOFS,
-        path="test_proof.png",
-        content=b"fake-image-bytes",
-        content_type="image/png",
-    )
-    assert url == "/static/storage/leave-proofs/test_proof.png"
+    # Thư mục tạm nằm trong repo, tạo với quyền mặc định (không dùng fixture tmp_path):
+    # fixture này tạo thư mục với mode 0o700 nên bị một số môi trường sandbox chặn truy cập.
+    storage_root = Path(__file__).resolve().parents[1] / "data" / "_test_storage_tmp"
+    shutil.rmtree(storage_root, ignore_errors=True)
+    storage_root.mkdir(parents=True, exist_ok=True)
 
-    pub_url = storage.get_public_url(SupabaseStorageHelper.BUCKET_LEAVE_PROOFS, "test_proof.png")
-    assert pub_url == "/static/storage/leave-proofs/test_proof.png"
+    try:
+        storage = SupabaseStorageHelper(supabase_url="", service_key="", storage_dir=storage_root)
+        url = await storage.upload_file(
+            bucket=SupabaseStorageHelper.BUCKET_LEAVE_PROOFS,
+            path="test_proof.png",
+            content=b"fake-image-bytes",
+            content_type="image/png",
+        )
+        assert url == "/static/storage/leave-proofs/test_proof.png"
 
-    deleted = await storage.delete_file(SupabaseStorageHelper.BUCKET_LEAVE_PROOFS, "test_proof.png")
-    assert deleted is True
+        pub_url = storage.get_public_url(SupabaseStorageHelper.BUCKET_LEAVE_PROOFS, "test_proof.png")
+        assert pub_url == "/static/storage/leave-proofs/test_proof.png"
 
-    # Delete non-existent
-    deleted_again = await storage.delete_file(SupabaseStorageHelper.BUCKET_LEAVE_PROOFS, "test_proof.png")
-    assert deleted_again is False
+        deleted = await storage.delete_file(SupabaseStorageHelper.BUCKET_LEAVE_PROOFS, "test_proof.png")
+        assert deleted is True
+
+        # Delete non-existent
+        deleted_again = await storage.delete_file(SupabaseStorageHelper.BUCKET_LEAVE_PROOFS, "test_proof.png")
+        assert deleted_again is False
+    finally:
+        shutil.rmtree(storage_root, ignore_errors=True)
 
 
 @pytest.mark.asyncio
