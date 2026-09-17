@@ -193,17 +193,17 @@
     - **Cơ chế Hoàn điểm duyệt muộn (Late Approval Refund)**: Nếu ca học đã được Cron đánh giá trừ điểm trước đó (`is_evaluated = TRUE` và có bản ghi trừ điểm trong `point_ledger`):
       Tự động ghi bản ghi hoàn điểm vào `point_ledger` (`point_delta = +5`, `reason_code = 'LEAVE_REFUND'`) và tăng lại `users.total_point`.
 
-- [ ] **Step 1: Viết test cho luồng nộp và duyệt đơn xin nghỉ phép**
+- [x] **Step 1: Viết test cho luồng nộp và duyệt đơn xin nghỉ phép**
   - Viết `backend/tests/test_leave_workflow.py` bao gồm:
     - Test upload file hợp lệ (jpg/png/pdf <= 5MB) và file không hợp lệ (exe/txt hoặc > 5MB bị từ chối 422).
     - Test Giảng viên duyệt đơn `APPROVED` -> trạng thái buổi học thành `EXCUSED`.
     - Test Giảng viên khác lớp cố tình duyệt đơn -> bị 403 Forbidden.
     - Test hoàn điểm nếu đơn được duyệt sau khi Cron 23h59 đã chạy trừ điểm.
-- [ ] **Step 2: Cài đặt `storage_service.py`**
+- [x] **Step 2: Cài đặt `storage_service.py`**
   - Tải file lên Supabase Storage bucket `leave-proofs` (fallback lưu local nếu chạy offline test).
-- [ ] **Step 3: Cài đặt `routes_leave_requests.py`**
+- [x] **Step 3: Cài đặt `routes_leave_requests.py`**
   - Endpoints nộp đơn cho Sinh viên và duyệt đơn cho Giảng viên.
-- [ ] **Step 4: Chạy test luồng đơn phép**
+- [x] **Step 4: Chạy test luồng đơn phép**
   - Run: `pytest backend/tests/test_leave_workflow.py -v`
   - Expected: PASS.
 
