@@ -83,17 +83,17 @@
   - `GET /api/v1/auth/me` -> Thông tin user đăng nhập (không chứa `face_embedding`)
   - Dependencies: `get_current_user`, `require_role(role_name)`, `verify_kiosk_api_key`
 
-- [ ] **Step 1: Viết test failing cho xác thực và phân quyền RBAC**
+- [x] **Step 1: Viết test failing cho xác thực và phân quyền RBAC**
   - Viết `backend/tests/test_auth.py` kiểm tra đăng nhập đúng/sai mật khẩu, mã hóa bcrypt, xác thực JWT, chặn sai role (403), chặn thiếu Kiosk API key (401).
-- [ ] **Step 2: Cài đặt module `security.py`**
+- [x] **Step 2: Cài đặt module `security.py`**
   - Các hàm: `verify_password()`, `get_password_hash()`, `create_access_token()`, `decode_access_token()`.
-- [ ] **Step 3: Cài đặt dependencies `deps_auth.py`**
+- [x] **Step 3: Cài đặt dependencies `deps_auth.py`**
   - `get_current_user`: giải mã JWT và lấy user từ DB, kiểm tra `is_active=True` và `deleted_at IS NULL`.
   - `require_role(*roles)`: enforce vai trò người dùng (ADMIN, TEACHER, STUDENT).
   - `verify_kiosk_api_key`: kiểm tra header `X-Kiosk-Api-Key` khớp với cấu hình hệ thống.
-- [ ] **Step 4: Cài đặt router `routes_auth.py` và gắn vào `main.py`**
+- [x] **Step 4: Cài đặt router `routes_auth.py` và gắn vào `main.py`**
   - Endpoint `/api/v1/auth/login` và `/api/v1/auth/me`.
-- [ ] **Step 5: Chạy test xác thực**
+- [x] **Step 5: Chạy test xác thực**
   - Run: `pytest backend/tests/test_auth.py -v`
   - Expected: PASS.
 

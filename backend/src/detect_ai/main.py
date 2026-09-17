@@ -6,6 +6,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from loguru import logger
 from prometheus_fastapi_instrumentator import Instrumentator
 from .api.routes_attendance import router as att
+from .api.routes_auth import router as auth
 from .api.routes_camera import router as cam
 from .api.routes_students import router as stu
 from .core.database import init_db
@@ -26,6 +27,7 @@ app.include_router(stu)
 app.include_router(att)
 app.include_router(cam)
 app.include_router(ws)
+app.include_router(auth, prefix="/api/v1/auth", tags=["auth"])
 Instrumentator().instrument(app).expose(app)  # /metrics: thay badge infer_ms tay
 
 @app.get("/api/health")
