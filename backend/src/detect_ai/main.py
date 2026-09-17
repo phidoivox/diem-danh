@@ -16,6 +16,7 @@ from .api.routes_camera import router as cam
 from .api.routes_evaluation import router as admin_evaluation
 from .api.routes_kiosk import router as kiosk
 from .api.routes_leave_requests import router as leave_requests
+from .api.routes_student_portal import router as student_portal
 from .api.routes_students import router as stu
 from .api.routes_teacher import router as teacher
 from .core.database import Session, init_db
@@ -61,6 +62,7 @@ app.include_router(admin_settings, prefix="/api/v1/admin/settings", tags=["admin
 app.include_router(admin_evaluation, prefix="/api/v1/admin/evaluation", tags=["admin-evaluation"])
 app.include_router(kiosk, prefix="/api/v1/attendance")
 app.include_router(leave_requests)
+app.include_router(student_portal)
 app.include_router(teacher)
 app.include_router(admin_reports)
 Instrumentator().instrument(app).expose(app)  # /metrics: thay badge infer_ms tay

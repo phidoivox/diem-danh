@@ -131,6 +131,97 @@ export function logout(): void {
   removeToken();
 }
 
+// Student Portal API definitions
+export interface StudentSchedule {
+  id: number;
+  class_id: number;
+  class_code: string;
+  course_name: string;
+  teacher_name: string;
+  room_name: string;
+  study_date: string;
+  start_time: string;
+  end_time: string;
+  session_order: number;
+}
+
+export interface StudentAttendance {
+  attendance_id: number;
+  schedule_id: number;
+  class_code: string;
+  course_name: string;
+  study_date: string;
+  start_time: string;
+  end_time: string;
+  check_in_time: string | null;
+  check_out_time: string | null;
+  has_uniform: boolean;
+  status: "PRESENT" | "LATE" | "HALF_ABSENT" | "ABSENT" | "EXCUSED" | string;
+  note: string | null;
+  snapshot_url: string | null;
+}
+
+export interface ConductLedgerEntry {
+  id: number;
+  point_delta: number;
+  reason_code: string;
+  description: string | null;
+  created_at: string;
+  schedule_id: number | null;
+}
+
+export interface StudentConductLedger {
+  total_point: number;
+  items: ConductLedgerEntry[];
+}
+
+export interface StudentLeaveRequest {
+  id: number;
+  schedule_id: number;
+  student_id: number;
+  reason: string;
+  proof_image: string | null;
+  status: "PENDING" | "APPROVED" | "REJECTED" | string;
+  teacher_feedback: string | null;
+  reviewed_by: number | null;
+  reviewed_at: string | null;
+  created_at: string;
+  course_name?: string | null;
+  class_code?: string | null;
+  study_date?: string | null;
+  start_time?: string | null;
+  end_time?: string | null;
+  room_name?: string | null;
+  student_code?: string | null;
+  student_name?: string | null;
+  student_email?: string | null;
+  avatar_url?: string | null;
+  class_name?: string | null;
+}
+
+export async function getStudentSchedule(): Promise<StudentSchedule[]> {
+  return authFetch<StudentSchedule[]>("/api/v1/student/schedule");
+}
+
+export async function getStudentAttendance(): Promise<StudentAttendance[]> {
+  return authFetch<StudentAttendance[]>("/api/v1/student/attendance");
+}
+
+export async function getStudentConductLedger(): Promise<StudentConductLedger> {
+  return authFetch<StudentConductLedger>("/api/v1/student/conduct-ledger");
+}
+
+export async function getStudentLeaveRequests(): Promise<StudentLeaveRequest[]> {
+  return authFetch<StudentLeaveRequest[]>("/api/v1/student/leave-requests");
+}
+
+export async function submitLeaveRequest(formData: FormData): Promise<StudentLeaveRequest> {
+  return authFetch<StudentLeaveRequest>("/api/v1/student/leave-requests", {
+    method: "POST",
+    body: formData,
+  });
+}
+
 // Legacy & Utility API definitions
 export type Att = { id: number; code: string; uniform: string; violations: string; snapshot: string; at: string };
 export type Student = { id: number; code: string; name: string; class_name: string; photo?: string };

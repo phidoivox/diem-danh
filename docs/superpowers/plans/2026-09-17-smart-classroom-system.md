@@ -336,13 +336,13 @@
   - Xem Sổ cái điểm rèn luyện (`point_ledger`) và tổng điểm hiện tại kèm diễn giải chi tiết.
   - Form gửi đơn xin nghỉ phép trực tuyến kèm upload ảnh giấy khám bệnh (minh chứng) và xem danh sách đơn đã nộp.
 
-- [ ] **Step 1: Xây dựng trang Thời khóa biểu (`/student/schedule`)**
+- [x] **Step 1: Xây dựng trang Thời khóa biểu (`/student/schedule`)**
   - Hiển thị danh sách các buổi học sắp diễn ra, phòng học, ca học, giảng viên phụ trách.
-- [ ] **Step 2: Xây dựng trang Lịch sử Điểm danh (`/student/attendance`)**
+- [x] **Step 2: Xây dựng trang Lịch sử Điểm danh (`/student/attendance`)**
   - Bảng thống kê lịch sử quét mã, giờ check-in, check-out, tình trạng đồng phục và trạng thái (Có mặt / Muộn / Có phép / Vắng).
-- [ ] **Step 3: Xây dựng trang Sổ cái Điểm Rèn luyện (`/student/conduct-points`)**
+- [x] **Step 3: Xây dựng trang Sổ cái Điểm Rèn luyện (`/student/conduct-points`)**
   - KPI Card hiển thị tổng điểm hiện tại (trên thang 100), biểu đồ hoặc bảng biến động điểm (+2, -1, -5, +5 hoàn điểm) kèm ngày giờ và lý do chi tiết.
-- [ ] **Step 4: Xây dựng trang Đơn xin nghỉ phép (`/student/leave-requests`)**
+- [x] **Step 4: Xây dựng trang Đơn xin nghỉ phép (`/student/leave-requests`)**
   - Danh sách đơn đã nộp kèm trạng thái `Chờ duyệt`, `Đã chấp nhận`, `Bị từ chối`.
   - Nút "+ Tạo đơn mới" mở modal: Chọn môn học -> Chọn buổi học -> Nhập lý do -> Tải lên ảnh giấy khám bệnh.
 
