@@ -238,17 +238,17 @@
   - Endpoint: `POST /api/v1/admin/evaluation/run-now` (cho phép Admin kích hoạt chạy bù thủ công).
   - Tích hợp APScheduler chạy tự động vào 23:59 mỗi ngày trong Lifespan.
 
-- [ ] **Step 1: Viết test cho thuật toán đánh giá 23h59 và tính Idempotency**
+- [x] **Step 1: Viết test cho thuật toán đánh giá 23h59 và tính Idempotency**
   - Viết `backend/tests/test_evaluation_cron.py`:
     - Case đủ in/out -> PRESENT, +2 điểm.
     - Case thiếu out -> HALF_ABSENT, -2 điểm.
     - Case không quẹt -> ABSENT, -5 điểm.
     - Case giáo viên sửa tay -> giữ nguyên status của giáo viên.
     - Case chạy lại `run-now` lần 2 -> bỏ qua các bản ghi đã `is_evaluated=True`, không bị trừ điểm 2 lần.
-- [ ] **Step 2: Cài đặt `evaluation_service.py`**
+- [x] **Step 2: Cài đặt `evaluation_service.py`**
   - Đọc các giá trị config từ `system_settings`, thực thi thuật toán Idempotent theo quy chuẩn.
-- [ ] **Step 3: Cài đặt router `routes_evaluation.py` và cấu hình APScheduler trong `main.py`**
-- [ ] **Step 4: Chạy test đánh giá tự động**
+- [x] **Step 3: Cài đặt router `routes_evaluation.py` và cấu hình APScheduler trong `main.py`**
+- [x] **Step 4: Chạy test đánh giá tự động**
   - Run: `pytest backend/tests/test_evaluation_cron.py -v`
   - Expected: PASS.
 

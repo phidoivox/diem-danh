@@ -1,0 +1,216 @@
+from __future__ import annotations
+
+from datetime import date, datetime, timedelta, timezone
+from typing import Any, Dict, List, Optional, Set
+from loguru import logger
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from ..models.academic import ClassStudent, Schedule
+from ..models.attendance_v2 import Attendance, AttendanceStatus
+from ..models.leave_request import LeaveRequest, LeaveStatus
+from ..models.point_ledger import PointLedger
+from ..models.system_setting import SystemSetting
+from ..models.user import StudentProfile
+
+
+async def run_nightly_evaluation(
+    session: AsyncSession,
+    target_date: Optional[date] = None,
+) -> Dict[str, Any]:
+    """Execute nightly evaluation of student attendance for the target date.
+    
+    This function is strictly idempotent: only attendance records with is_evaluated == False
+    are evaluated and written to the point ledger. Running multiple times will not duplicate points.
+    """
+    if target_date is None:
+        target_date = date.today()
+
+    logger.info(f"Running nightly evaluation for target_date={target_date}")
+
+    # 1. Read system settings
+    stmt_settings = select(SystemSetting)
+    settings_rows = (await session.execute(stmt_settings)).scalars().all()
+    settings_map = {row.key: row.value for row in settings_rows}
+
+    def get_int_setting(key: str, default: int) -> int:
+        val = settings_map.get(key)
+        if val is not None:
+            try:
+                return int(val)
+            except ValueError:
+                pass
+        return default
+
+    def get_bool_setting(key: str, default: bool) -> bool:
+        val = settings_map.get(key)
+        if val is not None:
+            return val.strip().lower() in ("true", "1", "yes", "t")
+        return default
+
+    point_full = get_int_setting("POINT_FULL_ATTENDANCE", 2)
+    point_late = get_int_setting("POINT_LATE", -1)
+    point_half_absence = get_int_setting("POINT_HALF_ABSENCE", -2)
+    point_absence_without_leave = get_int_setting("POINT_ABSENCE_WITHOUT_LEAVE", -5)
+    point_uniform_violation = get_int_setting("POINT_UNIFORM_VIOLATION", -2)
+    late_tolerance_minutes = get_int_setting("LATE_TOLERANCE_MINUTES", 15)
+    require_checkout = get_bool_setting("REQUIRE_CHECKOUT", True)
+
+    # 2. Query schedules for target_date
+    stmt_schedules = (
+        select(Schedule)
+        .where(Schedule.study_date == target_date)
+        .order_by(Schedule.id)
+    )
+    schedules = (await session.execute(stmt_schedules)).scalars().all()
+
+    count_records = 0
+    evaluated_student_ids: Set[int] = set()
+    evaluated_schedule_ids: Set[int] = set()
+
+    for sched in schedules:
+        # A. Find all enrolled students in the schedule's class
+        stmt_enrolled = select(ClassStudent.student_id).where(
+            ClassStudent.class_id == sched.class_id
+        )
+        enrolled_student_ids = (await session.execute(stmt_enrolled)).scalars().all()
+
+        # B. Find existing attendances for this schedule
+        stmt_existing = select(Attendance).where(Attendance.schedule_id == sched.id)
+        existing_attendances = (await session.execute(stmt_existing)).scalars().all()
+        att_by_student = {att.student_id: att for att in existing_attendances}
+
+        # C. Auto-create ABSENT attendance for students without any record
+        for sid in enrolled_student_ids:
+            if sid not in att_by_student:
+                new_att = Attendance(
+                    schedule_id=sched.id,
+                    student_id=sid,
+                    status=AttendanceStatus.ABSENT,
+                    is_evaluated=False,
+                    has_uniform=True,
+                    is_manual_override=False,
+                )
+                session.add(new_att)
+                att_by_student[sid] = new_att
+
+        await session.flush()
+
+        # D. Filter attendances that are not evaluated yet (ensure Idempotency)
+        unevaluated_attendances = [
+            att for att in att_by_student.values() if not att.is_evaluated
+        ]
+
+        if not unevaluated_attendances:
+            continue
+
+        sched_start_dt = datetime.combine(sched.study_date, sched.start_time)
+        late_deadline = sched_start_dt + timedelta(minutes=late_tolerance_minutes)
+
+        for att in unevaluated_attendances:
+            # Query student profile for updating points
+            stmt_sp = select(StudentProfile).where(StudentProfile.user_id == att.student_id)
+            profile = (await session.execute(stmt_sp)).scalar_one_or_none()
+
+            point_delta = 0
+
+            # Rule 1: Respect manual override by teacher
+            if att.is_manual_override:
+                status = att.status
+                if status == AttendanceStatus.PRESENT:
+                    point_delta = point_full
+                elif status == AttendanceStatus.LATE:
+                    point_delta = point_late
+                elif status == AttendanceStatus.HALF_ABSENT:
+                    point_delta = point_half_absence
+                elif status == AttendanceStatus.ABSENT:
+                    point_delta = point_absence_without_leave
+                elif status == AttendanceStatus.EXCUSED:
+                    point_delta = 0
+
+                # Uniform violation applies if has_uniform is False and status != EXCUSED
+                if not att.has_uniform and status != AttendanceStatus.EXCUSED:
+                    point_delta += point_uniform_violation
+
+            else:
+                # Rule 2: Check approved leave requests
+                stmt_leave = select(LeaveRequest).where(
+                    LeaveRequest.schedule_id == sched.id,
+                    LeaveRequest.student_id == att.student_id,
+                    LeaveRequest.status == LeaveStatus.APPROVED,
+                )
+                approved_leave = (await session.execute(stmt_leave)).scalar_one_or_none()
+
+                if approved_leave:
+                    att.status = AttendanceStatus.EXCUSED
+                    point_delta = 0
+                else:
+                    # Rule 3: Auto-inference from Kiosk scan
+                    if att.check_in_time is not None:
+                        cin = att.check_in_time
+                        cin_naive = (
+                            datetime.combine(cin.date(), cin.time())
+                            if cin.tzinfo is not None
+                            else cin
+                        )
+                        is_late = cin_naive > late_deadline
+
+                        if require_checkout:
+                            if att.check_out_time is not None:
+                                if is_late:
+                                    att.status = AttendanceStatus.LATE
+                                    point_delta = point_late
+                                else:
+                                    att.status = AttendanceStatus.PRESENT
+                                    point_delta = point_full
+                            else:
+                                att.status = AttendanceStatus.HALF_ABSENT
+                                point_delta = point_half_absence
+                        else:
+                            if is_late:
+                                att.status = AttendanceStatus.LATE
+                                point_delta = point_late
+                            else:
+                                att.status = AttendanceStatus.PRESENT
+                                point_delta = point_full
+
+                        # Uniform violation check
+                        if not att.has_uniform:
+                            point_delta += point_uniform_violation
+                    else:
+                        # No check-in recorded
+                        att.status = AttendanceStatus.ABSENT
+                        point_delta = point_absence_without_leave
+
+            # Record in Point Ledger
+            ledger_entry = PointLedger(
+                student_id=att.student_id,
+                schedule_id=sched.id,
+                point_delta=point_delta,
+                reason_code="NIGHTLY_EVAL",
+                description=f"Đánh giá chuyên cần ngày {target_date} - {att.status.value}",
+            )
+            session.add(ledger_entry)
+
+            # Mark attendance evaluated
+            att.is_evaluated = True
+            att.evaluated_at = datetime.now(timezone.utc)
+
+            # Update profile total_point
+            if profile:
+                profile.total_point = max(0, profile.total_point + point_delta)
+
+            count_records += 1
+            evaluated_student_ids.add(att.student_id)
+            evaluated_schedule_ids.add(sched.id)
+
+    await session.commit()
+
+    stats = {
+        "target_date": str(target_date),
+        "schedules_evaluated": len(evaluated_schedule_ids),
+        "students_evaluated": len(evaluated_student_ids),
+        "total_records": count_records,
+    }
+    logger.info(f"Evaluation complete for {target_date}: {stats}")
+    return stats
