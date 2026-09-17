@@ -13,6 +13,14 @@ PHOTO_DIR.mkdir(exist_ok=True)
 
 class Settings(BaseSettings):
     database_url: str = f"sqlite+aiosqlite:///{DATA_DIR / 'detect_ai.db'}"
+    supabase_url: str = ""
+    supabase_key: str = ""
+    supabase_service_key: str = ""
+    supabase_db_url: str = ""
+    kiosk_api_key: str = "kiosk-secret-key-2026"
+    jwt_secret: str = "smart-classroom-super-secret-jwt-key-2026"
+    jwt_algorithm: str = "HS256"
+    jwt_access_token_expire_minutes: int = 60 * 24
     face_sim_threshold: float = 0.55
     yolo_conf: float = 0.35
     yolo_weights: str = str(DATA_DIR / "weights" / "uniform_yolo26.pt")
@@ -35,8 +43,23 @@ class Settings(BaseSettings):
 
 S = Settings()
 
-# Alias giu code cu (C.XXX) chay, khong sua tung file.
-DATABASE_URL = S.database_url
+def _resolve_database_url(s: Settings) -> str:
+    raw_url = s.supabase_db_url.strip() if s.supabase_db_url.strip() else s.database_url.strip()
+    if raw_url.startswith("postgresql://"):
+        return raw_url.replace("postgresql://", "postgresql+asyncpg://", 1)
+    if raw_url.startswith("postgres://"):
+        return raw_url.replace("postgres://", "postgresql+asyncpg://", 1)
+    return raw_url
+
+DATABASE_URL = _resolve_database_url(S)
+SUPABASE_URL = S.supabase_url
+SUPABASE_KEY = S.supabase_key or S.supabase_service_key
+SUPABASE_SERVICE_KEY = S.supabase_service_key or S.supabase_key
+SUPABASE_DB_URL = S.supabase_db_url
+KIOSK_API_KEY = S.kiosk_api_key
+JWT_SECRET = S.jwt_secret
+JWT_ALGORITHM = S.jwt_algorithm
+JWT_ACCESS_TOKEN_EXPIRE_MINUTES = S.jwt_access_token_expire_minutes
 FACE_SIM_THRESHOLD = S.face_sim_threshold
 YOLO_CONF = S.yolo_conf
 YOLO_WEIGHTS = S.yolo_weights
