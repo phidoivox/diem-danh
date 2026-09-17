@@ -11,6 +11,7 @@ from .api.routes_admin_users import router as admin_users
 from .api.routes_attendance import router as att
 from .api.routes_auth import router as auth
 from .api.routes_camera import router as cam
+from .api.routes_kiosk import router as kiosk
 from .api.routes_students import router as stu
 from .core.database import init_db
 from .streamers.save_queue import saver_loop
@@ -34,6 +35,7 @@ app.include_router(auth, prefix="/api/v1/auth", tags=["auth"])
 app.include_router(admin_users, prefix="/api/v1/admin/users", tags=["admin-users"])
 app.include_router(admin_academic, prefix="/api/v1/admin/academic", tags=["admin-academic"])
 app.include_router(admin_settings, prefix="/api/v1/admin/settings", tags=["admin-settings"])
+app.include_router(kiosk, prefix="/api/v1/attendance")
 Instrumentator().instrument(app).expose(app)  # /metrics: thay badge infer_ms tay
 
 @app.get("/api/health")

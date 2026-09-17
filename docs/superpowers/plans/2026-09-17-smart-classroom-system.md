@@ -154,17 +154,17 @@
       - Nếu đã có Check-in: Ghi nhận Check-out (`check_out_time = timestamp`).
   - Đồng bộ `face_store.py`: Nạp embeddings trực tiếp từ bảng `student_profiles` (`JOIN users u ON sp.user_id = u.id WHERE u.is_active = TRUE AND u.deleted_at IS NULL`).
 
-- [ ] **Step 1: Viết test cho luồng ghi nhận Kiosk Check-in và Check-out**
+- [x] **Step 1: Viết test cho luồng ghi nhận Kiosk Check-in và Check-out**
   - Viết `backend/tests/test_kiosk.py` kiểm tra gọi Kiosk API:
     - Quét lần 1 (đầu giờ) -> Tạo record `check_in_time`.
     - Quét lần 2 (cuối giờ) -> Cập nhật `check_out_time`.
     - Quét ngoài giờ học của phòng -> Trả thông báo lỗi/không tìm thấy ca học.
-- [ ] **Step 2: Nâng cấp `face_store.py`**
+- [x] **Step 2: Nâng cấp `face_store.py`**
   - Đổi nguồn nạp vector từ bảng `student_profiles` (`student_profiles.face_embedding`), duy trì in-memory Faiss index để tốc độ tra cứu $< 10$ms.
-- [ ] **Step 3: Cài đặt `kiosk_service.py` & `routes_kiosk.py`**
+- [x] **Step 3: Cài đặt `kiosk_service.py` & `routes_kiosk.py`**
   - Tìm lịch học hiện tại theo `room_name` và thời gian thực.
   - Ghi nhận Check-in và Check-out an toàn, chống ghi đè lỗi.
-- [ ] **Step 4: Chạy test Kiosk**
+- [x] **Step 4: Chạy test Kiosk**
   - Run: `pytest backend/tests/test_kiosk.py -v`
   - Expected: PASS.
 
