@@ -1,0 +1,37 @@
+[project]
+name = "detect-ai"
+version = "0.1.0"
+description = "Web diem danh nhan dien hoc sinh/sinh vien + kiem tra dong phuc (YOLO26 + Supervision + InsightFace)"
+readme = "README.md"
+authors = [
+    { name = "Võ Hoàng Nam", email = "86737094+phidoivox@users.noreply.github.com" }
+]
+requires-python = ">=3.12"
+dependencies = [
+    "fastapi>=0.115",
+    "uvicorn[standard]>=0.30",
+    "websockets>=12",
+    "pydantic>=2",
+    "pydantic-settings>=2",
+    "sqlalchemy>=2",
+    "aiosqlite>=0.19",
+    "numpy>=1.26",
+    "opencv-python-headless>=4.9",
+    "ultralytics>=8.3",
+    "supervision>=0.25",
+    "insightface>=0.7",
+    "onnxruntime>=1.18",
+    "python-multipart>=0.0.9",
+    "loguru>=0.7",
+    "pyyaml>=6",
+    "faiss-cpu>=1.8",
+    "prometheus-fastapi-instrumentator>=7",
+    "roboflow>=1",
+]
+
+[project.scripts]
+detect-ai = "detect_ai:main"
+
+[build-system]
+requires = ["uv_build>=0.12.11,<0.13.0"]
+build-backend = "uv_build"
