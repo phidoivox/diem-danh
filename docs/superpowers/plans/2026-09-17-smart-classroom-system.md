@@ -304,13 +304,13 @@
 - Consumes: `/api/v1/auth/login`, `/api/v1/auth/me`
 - Produces: Hệ thống layout chuẩn SaaS quản trị (Restrained Enterprise): Tông màu slate/zinc sạch sẽ, 1px border tinh tế, font số `tabular-nums`, không hiệu ứng màu mè hay gradient phát sáng AI; Sidebar + Topbar phân nhánh theo Role (Student, Teacher, Admin).
 
-- [ ] **Step 1: Cập nhật thư viện frontend**
+- [x] **Step 1: Cập nhật thư viện frontend**
   - Cài đặt `lucide-react` để hỗ trợ icon đồng bộ cho CRM Dashboard.
-- [ ] **Step 2: Cài đặt `auth-context.tsx` & `lib/api.ts`**
+- [x] **Step 2: Cài đặt `auth-context.tsx` & `lib/api.ts`**
   - Lưu và đọc access token, cung cấp `useAuth()` hook chứa `{ user, role, login, logout, isAuthenticated }`.
-- [ ] **Step 3: Xây dựng trang Đăng nhập `/login`**
+- [x] **Step 3: Xây dựng trang Đăng nhập `/login`**
   - Giao diện đăng nhập chuẩn, nhập mã người dùng (user_code) và mật khẩu, xử lý loading và hiển thị lỗi.
-- [ ] **Step 4: Xây dựng Shell Dashboard (`sidebar.tsx`, `topbar.tsx`, `role-guard.tsx`)**
+- [x] **Step 4: Xây dựng Shell Dashboard (`sidebar.tsx`, `topbar.tsx`, `role-guard.tsx`)**
   - Sidebar hiển thị menu tùy theo quyền:
     - Sinh viên: Lịch học (TKB), Lịch sử điểm danh, Điểm rèn luyện, Đơn xin phép.
     - Giảng viên: Lớp học phụ trách, Điểm danh trực tiếp (Live), Duyệt đơn phép, Báo cáo cấm thi.

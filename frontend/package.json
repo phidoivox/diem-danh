@@ -9,11 +9,12 @@
     "lint": "eslint"
   },
   "dependencies": {
+    "@tanstack/react-table": "^8.21",
+    "lucide-react": "^1.46.0",
     "next": "16.3.4",
     "react": "19.2.8",
     "react-dom": "19.2.8",
-    "react-hook-form": "^7.55",
-    "@tanstack/react-table": "^8.21"
+    "react-hook-form": "^7.55"
   },
   "devDependencies": {
     "@tailwindcss/postcss": "^4",
