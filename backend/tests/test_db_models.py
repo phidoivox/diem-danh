@@ -381,7 +381,7 @@ async def test_supabase_storage_local_fallback():
         )
         assert url == "/static/storage/leave-proofs/test_proof.png"
 
-        pub_url = storage.get_public_url(SupabaseStorageHelper.BUCKET_LEAVE_PROOFS, "test_proof.png")
+        pub_url = await storage.get_public_url(SupabaseStorageHelper.BUCKET_LEAVE_PROOFS, "test_proof.png")
         assert pub_url == "/static/storage/leave-proofs/test_proof.png"
 
         deleted = await storage.delete_file(SupabaseStorageHelper.BUCKET_LEAVE_PROOFS, "test_proof.png")
@@ -391,6 +391,100 @@ async def test_supabase_storage_local_fallback():
         deleted_again = await storage.delete_file(SupabaseStorageHelper.BUCKET_LEAVE_PROOFS, "test_proof.png")
         assert deleted_again is False
     finally:
+        shutil.rmtree(storage_root, ignore_errors=True)
+
+
+@pytest.mark.asyncio
+async def test_supabase_storage_cloud_mode_uses_storage3():
+    """Chế độ cloud: xác minh request thật gửi tới Supabase Storage qua server HTTP cục bộ.
+
+    Đảm bảo client storage3 được cấu hình đúng base URL `/storage/v1`, header
+    `apikey` + `Authorization: Bearer <service_key>` và cờ `x-upsert`.
+    """
+    import json
+    import threading
+    from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+
+    from detect_ai.core.supabase import SupabaseStorageHelper
+
+    received: list[dict] = []
+
+    class Handler(BaseHTTPRequestHandler):
+        def log_message(self, *args):  # tắt log ồn ào của http.server
+            pass
+
+        def _reply(self, payload):
+            body = json.dumps(payload).encode()
+            self.send_response(200)
+            self.send_header("Content-Type", "application/json")
+            self.send_header("Content-Length", str(len(body)))
+            self.end_headers()
+            self.wfile.write(body)
+
+        def do_POST(self):
+            length = int(self.headers.get("Content-Length", 0))
+            received.append(
+                {
+                    "method": "POST",
+                    "path": self.path,
+                    # httpx gửi tên header ở dạng chữ thường
+                    "headers": {k.lower(): v for k, v in self.headers.items()},
+                    "body": self.rfile.read(length),
+                }
+            )
+            self._reply({"Key": "leave-proofs/proof.png", "Id": "11111111-1111-1111-1111-111111111111"})
+
+        def do_DELETE(self):
+            length = int(self.headers.get("Content-Length", 0))
+            received.append(
+                {
+                    "method": "DELETE",
+                    "path": self.path,
+                    "headers": {k.lower(): v for k, v in self.headers.items()},
+                    "body": self.rfile.read(length),
+                }
+            )
+            self._reply([{"name": "proof.png"}])
+
+    server = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
+    threading.Thread(target=server.serve_forever, daemon=True).start()
+    base_url = "http://127.0.0.1:" + str(server.server_address[1])
+    storage_root = Path(__file__).resolve().parents[1] / "data" / "_test_storage_cloud"
+    shutil.rmtree(storage_root, ignore_errors=True)
+
+    try:
+        storage = SupabaseStorageHelper(
+            supabase_url=base_url, service_key="service-role-key", storage_dir=storage_root
+        )
+        assert storage.is_cloud_enabled is True
+
+        url = await storage.upload_file(
+            bucket=SupabaseStorageHelper.BUCKET_LEAVE_PROOFS,
+            path="proof.png",
+            content=b"fake-png-bytes",
+            content_type="image/png",
+        )
+        assert url == base_url + "/storage/v1/object/public/leave-proofs/proof.png"
+
+        upload = received[0]
+        assert upload["method"] == "POST"
+        assert upload["path"] == "/storage/v1/object/leave-proofs/proof.png"
+        assert upload["headers"]["authorization"] == "Bearer service-role-key"
+        assert upload["headers"]["apikey"] == "service-role-key"
+        assert upload["headers"]["x-upsert"] == "true"
+        assert b"fake-png-bytes" in upload["body"]
+
+        assert await storage.delete_file(SupabaseStorageHelper.BUCKET_LEAVE_PROOFS, "proof.png") is True
+        # Supabase Storage nhận danh sách file cần xoá trong body của DELETE /object/{bucket}
+        assert received[1]["method"] == "DELETE"
+        assert received[1]["path"] == "/storage/v1/object/leave-proofs"
+        assert b"proof.png" in received[1]["body"]
+
+        # Cloud mode thì KHÔNG ghi file xuống đĩa local
+        assert not (storage_root / "leave-proofs" / "proof.png").exists()
+    finally:
+        server.shutdown()
+        server.server_close()
         shutil.rmtree(storage_root, ignore_errors=True)
 
 

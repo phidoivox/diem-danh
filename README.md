@@ -39,7 +39,7 @@ Hệ thống điểm danh và quản lý chuyên cần tích hợp **AI Kiosk (F
 | Tầng | Công nghệ |
 | --- | --- |
 | **Database** | Supabase PostgreSQL (11 bảng 3NF, ENUM, soft delete) + Supabase Storage (`leave-proofs`, `avatars`, `snapshots`) |
-| **Backend** | FastAPI, Python 3.12, SQLAlchemy 2.0 Async (`asyncpg` / `aiosqlite`), Pydantic v2, PyJWT, Passlib (Bcrypt), APScheduler, OpenPyXL |
+| **Backend** | FastAPI, Python 3.12, SQLAlchemy 2.0 Async (`asyncpg` / `aiosqlite`), Pydantic v2, python-jose (JWT), Passlib (Bcrypt), APScheduler, OpenPyXL, storage3 (Supabase Storage) |
 | **AI Engine** | YOLO26 + Supervision (đồng phục), InsightFace + Faiss in-memory (tra cứu khuôn mặt < 10ms) |
 | **Frontend** | Next.js 16 (App Router), React 19, Tailwind CSS v4, Lucide Icons — phong cách **SaaS quản trị (Linear/Stripe)**: tông slate/zinc, viền 1px, không gradient/glow |
 | **Testing** | pytest + pytest-asyncio + httpx ASGITransport (SQLite in-memory), 10 file test |
