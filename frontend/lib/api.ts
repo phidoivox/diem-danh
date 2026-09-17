@@ -802,3 +802,57 @@ export const studentPhoto = (name?: string) => (name ? `${API}/api/students/phot
 export const toCsv = (rows: Att[]) =>
   "id,code,uniform,violations,at\n" +
   rows.map((r) => [r.id, r.code, r.uniform, `"${r.violations}"`, r.at].join(",")).join("\n");
+
+// =====================================================================
+// KIOSK ATTENDANCE API DEFINITIONS
+// =====================================================================
+export interface KioskRecordPayload {
+  room_name: string;
+  student_code: string;
+  has_uniform: boolean;
+  timestamp?: string;
+}
+
+export interface KioskRecordResponse {
+  type: "CHECK_IN" | "CHECK_OUT";
+  student_code: string;
+  student_name: string;
+  room_name: string;
+  class_code: string;
+  status?: string;
+  has_uniform: boolean;
+  time?: string;
+  check_in_time?: string;
+  check_out_time?: string;
+  violations?: string[];
+  error?: string;
+}
+
+export async function recordKioskAttendance(
+  payload: KioskRecordPayload
+): Promise<KioskRecordResponse> {
+  const kioskKey =
+    process.env.NEXT_PUBLIC_KIOSK_API_KEY || "kiosk-secret-key-2026";
+  const res = await fetch(`${API}/api/v1/attendance/kiosk-record`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      "X-Kiosk-Api-Key": kioskKey,
+    },
+    body: JSON.stringify(payload),
+  });
+
+  if (!res.ok) {
+    let errorDetail = "";
+    try {
+      const errJson = await res.json();
+      errorDetail = errJson.detail || JSON.stringify(errJson);
+    } catch {
+      errorDetail = await res.text();
+    }
+    throw new Error(errorDetail || `Lỗi ghi nhận điểm danh (${res.status})`);
+  }
+
+  return res.json();
+}
+

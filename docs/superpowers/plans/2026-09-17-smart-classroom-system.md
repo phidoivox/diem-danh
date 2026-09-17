@@ -430,11 +430,11 @@
     - Kết quả đồng phục: Hợp lệ (Áo đồng phục) hoặc Không hợp lệ.
     - Âm thanh beep phản hồi (Check-in thành công / Vi phạm).
 
-- [ ] **Step 1: Xây dựng giao diện Kiosk toàn màn hình (`/diem-danh`)**
+- [x] **Step 1: Xây dựng giao diện Kiosk toàn màn hình (`/diem-danh`)**
   - Thiết kế UI tối ưu cho màn hình Kiosk / Tablet: Đồng hồ số lớn, thông tin phòng học hiện tại, chuyển đổi chế độ Tự động / Check-in / Check-out.
-- [ ] **Step 2: Tích hợp WebSocket luồng nhận diện AI**
+- [x] **Step 2: Tích hợp WebSocket luồng nhận diện AI**
   - Hiển thị bounding box màu xanh (đúng đồng phục, nhận diện thành công) hoặc màu đỏ/cam (chưa nhận diện hoặc vi phạm).
-- [ ] **Step 3: Card hiển thị kết quả và thông báo âm thanh**
+- [x] **Step 3: Card hiển thị kết quả và thông báo âm thanh**
   - Hiện thẻ thông tin sinh viên vừa quét trong 3 giây rồi trở về trạng thái chờ.
 
 ---
