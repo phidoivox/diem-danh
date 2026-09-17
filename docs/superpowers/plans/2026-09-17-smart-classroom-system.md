@@ -116,18 +116,18 @@
   - Schedule CRUD: Thêm lịch học với validation chống trùng phòng (`room_name`, `study_date`, khoảng thời gian `start_time` - `end_time`).
   - System Settings: `GET / PUT /api/v1/admin/settings` đọc & lưu tham số tính điểm/trễ.
 
-- [ ] **Step 1: Viết test cho nghiệp vụ Quản trị & kiểm tra chống trùng phòng**
+- [x] **Step 1: Viết test cho nghiệp vụ Quản trị & kiểm tra chống trùng phòng**
   - Viết `backend/tests/test_admin_academic.py` kiểm thử thêm lớp, thêm sinh viên vào lớp, tạo lịch học (kỳ vọng ném lỗi 400 nếu trùng phòng), soft delete user (không mất điểm danh cũ).
-- [ ] **Step 2: Cài đặt `routes_admin_users.py`**
+- [x] **Step 2: Cài đặt `routes_admin_users.py`**
   - Danh sách User (phân trang, search, lọc role), Tạo user mới, Cập nhật thông tin, Xóa mềm (`deleted_at = NOW()`).
   - Hỗ trợ endpoint trích xuất face embedding từ ảnh chân dung và lưu vào cột `face_embedding`.
-- [ ] **Step 3: Cài đặt `routes_admin_academic.py`**
+- [x] **Step 3: Cài đặt `routes_admin_academic.py`**
   - Quản lý Classes, Thêm/Xóa sinh viên vào lớp (`class_students`).
   - Quản lý Schedules: logic kiểm tra xung đột phòng học:
     `WHERE room_name = :room AND study_date = :date AND NOT (end_time <= :new_start OR start_time >= :new_end)`.
-- [ ] **Step 4: Cài đặt `routes_admin_settings.py`**
+- [x] **Step 4: Cài đặt `routes_admin_settings.py`**
   - CRUD tham số cấu hình: `POINT_FULL_ATTENDANCE`, `POINT_LATE`, `POINT_HALF_ABSENCE`, `POINT_ABSENCE_WITHOUT_LEAVE`, `POINT_UNIFORM_VIOLATION`, `LATE_TOLERANCE_MINUTES`, `REQUIRE_CHECKOUT`, `MAX_ABSENCE_PERCENT_EXAM_BAN`.
-- [ ] **Step 5: Chạy test quản trị học vụ**
+- [x] **Step 5: Chạy test quản trị học vụ**
   - Run: `pytest backend/tests/test_admin_academic.py -v`
   - Expected: PASS.
 
