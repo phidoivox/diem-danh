@@ -276,13 +276,13 @@
   - `GET /api/v1/teacher/classes/{class_id}/export-exam-ban-excel`: Xuất file Excel (.xlsx) danh sách cấm thi của **từng môn** do giảng viên phụ trách.
   - `GET /api/v1/admin/reports/export-exam-ban-all-excel`: Xuất file Excel (.xlsx) danh sách cấm thi của **toàn trường** (Admin).
 
-- [ ] **Step 1: Viết test cho nghiệp vụ Giảng viên và tính toán cấm thi (môn học & toàn trường)**
+- [x] **Step 1: Viết test cho nghiệp vụ Giảng viên và tính toán cấm thi (môn học & toàn trường)**
   - Viết `backend/tests/test_teacher_and_reports.py` kiểm tra live attendance, sửa điểm thủ công (ghi nhận cờ override), kiểm tra công thức tính tỷ lệ vắng và xuất file Excel theo từng lớp và toàn trường.
-- [ ] **Step 2: Cài đặt `report_service.py`**
+- [x] **Step 2: Cài đặt `report_service.py`**
   - Hàm tính tỷ lệ vắng và hàm sinh file Excel sử dụng `openpyxl` hỗ trợ cả scope lớp học phần (GV) và scope toàn trường (Admin).
-- [ ] **Step 3: Cài đặt `routes_teacher.py`**
+- [x] **Step 3: Cài đặt `routes_teacher.py`**
   - Đầy đủ các endpoint cho Giảng viên.
-- [ ] **Step 4: Chạy test nghiệp vụ Giảng viên**
+- [x] **Step 4: Chạy test nghiệp vụ Giảng viên**
   - Run: `pytest backend/tests/test_teacher_and_reports.py -v`
   - Expected: PASS.
 

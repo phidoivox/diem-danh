@@ -7,6 +7,7 @@ from loguru import logger
 from prometheus_fastapi_instrumentator import Instrumentator
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from .api.routes_admin_academic import router as admin_academic
+from .api.routes_admin_reports import router as admin_reports
 from .api.routes_admin_settings import router as admin_settings
 from .api.routes_admin_users import router as admin_users
 from .api.routes_attendance import router as att
@@ -16,6 +17,7 @@ from .api.routes_evaluation import router as admin_evaluation
 from .api.routes_kiosk import router as kiosk
 from .api.routes_leave_requests import router as leave_requests
 from .api.routes_students import router as stu
+from .api.routes_teacher import router as teacher
 from .core.database import Session, init_db
 from .services.evaluation_service import run_nightly_evaluation
 from .streamers.save_queue import saver_loop
@@ -59,6 +61,8 @@ app.include_router(admin_settings, prefix="/api/v1/admin/settings", tags=["admin
 app.include_router(admin_evaluation, prefix="/api/v1/admin/evaluation", tags=["admin-evaluation"])
 app.include_router(kiosk, prefix="/api/v1/attendance")
 app.include_router(leave_requests)
+app.include_router(teacher)
+app.include_router(admin_reports)
 Instrumentator().instrument(app).expose(app)  # /metrics: thay badge infer_ms tay
 
 @app.get("/api/health")
