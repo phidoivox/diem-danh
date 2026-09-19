@@ -90,6 +90,10 @@ export default function AdminAcademicPage() {
   const [classToDelete, setClassToDelete] = useState<AdminClass | null>(null);
   const [studentToRemove, setStudentToRemove] = useState<{ id: number; code: string } | null>(null);
   const [scheduleToDelete, setScheduleToDelete] = useState<AdminSchedule | null>(null);
+  // Pending riêng từng dialog: onConfirm async, chặn double-click + hiện "Đang xử lý..."
+  const [isDeletingClass, setIsDeletingClass] = useState(false);
+  const [isRemovingStudent, setIsRemovingStudent] = useState(false);
+  const [isDeletingSchedule, setIsDeletingSchedule] = useState(false);
 
   // Load teachers for class creation
   useEffect(() => {
@@ -221,7 +225,8 @@ export default function AdminAcademicPage() {
   };
 
   const handleConfirmDeleteClass = async () => {
-    if (!classToDelete) return;
+    if (!classToDelete || isDeletingClass) return;
+    setIsDeletingClass(true);
     try {
       await deleteAdminClass(classToDelete.id);
       setFeedbackMsg({ type: "success", text: `Đã xóa lớp học ${classToDelete.class_code}` });
@@ -229,6 +234,8 @@ export default function AdminAcademicPage() {
       fetchClasses();
     } catch (err: any) {
       setFeedbackMsg({ type: "error", text: err.message || "Không thể xóa lớp học" });
+    } finally {
+      setIsDeletingClass(false);
     }
   };
 
@@ -272,7 +279,8 @@ export default function AdminAcademicPage() {
   };
 
   const handleConfirmRemoveStudent = async () => {
-    if (!selectedClassForStudents || !studentToRemove) return;
+    if (!selectedClassForStudents || !studentToRemove || isRemovingStudent) return;
+    setIsRemovingStudent(true);
     try {
       await removeStudentFromClass(selectedClassForStudents.id, studentToRemove.id);
       const res = await getAdminClassStudents(selectedClassForStudents.id);
@@ -281,6 +289,8 @@ export default function AdminAcademicPage() {
       fetchClasses(); // refresh count
     } catch (err: any) {
       setStudentsModalError(err.message || "Không thể xóa sinh viên khỏi lớp");
+    } finally {
+      setIsRemovingStudent(false);
     }
   };
 
@@ -290,7 +300,8 @@ export default function AdminAcademicPage() {
   };
 
   const handleConfirmDeleteSchedule = async () => {
-    if (!scheduleToDelete) return;
+    if (!scheduleToDelete || isDeletingSchedule) return;
+    setIsDeletingSchedule(true);
     try {
       await deleteAdminSchedule(scheduleToDelete.id);
       setFeedbackMsg({ type: "success", text: "Đã xóa lịch học thành công" });
@@ -298,6 +309,8 @@ export default function AdminAcademicPage() {
       fetchSchedules();
     } catch (err: any) {
       setFeedbackMsg({ type: "error", text: err.message || "Không thể xóa lịch học" });
+    } finally {
+      setIsDeletingSchedule(false);
     }
   };
 
@@ -943,8 +956,9 @@ export default function AdminAcademicPage() {
               ? `Bạn có chắc chắn muốn xóa lớp học phần [${classToDelete.class_code}] ${classToDelete.course_name}?`
               : ""
           }
-          confirmLabel="Xóa lớp"
+          confirmLabel={isDeletingClass ? "Đang xử lý..." : "Xóa lớp"}
           onConfirm={handleConfirmDeleteClass}
+          isPending={isDeletingClass}
         />
         <ConfirmDialog
           open={studentToRemove !== null}
@@ -957,8 +971,9 @@ export default function AdminAcademicPage() {
               ? `Xóa sinh viên ${studentToRemove.code} khỏi lớp học phần này?`
               : ""
           }
-          confirmLabel="Xóa khỏi lớp"
+          confirmLabel={isRemovingStudent ? "Đang xử lý..." : "Xóa khỏi lớp"}
           onConfirm={handleConfirmRemoveStudent}
+          isPending={isRemovingStudent}
         />
         <ConfirmDialog
           open={scheduleToDelete !== null}
@@ -971,8 +986,9 @@ export default function AdminAcademicPage() {
               ? `Xóa lịch học ngày ${scheduleToDelete.study_date} (${scheduleToDelete.room_name})?`
               : ""
           }
-          confirmLabel="Xóa lịch"
+          confirmLabel={isDeletingSchedule ? "Đang xử lý..." : "Xóa lịch"}
           onConfirm={handleConfirmDeleteSchedule}
+          isPending={isDeletingSchedule}
         />
       </div>
     </RoleGuard>
