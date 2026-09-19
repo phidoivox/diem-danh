@@ -1,7 +1,7 @@
 [project]
 name = "detect-ai"
 version = "0.1.0"
-description = "Web diem danh nhan dien hoc sinh/sinh vien + kiem tra dong phuc (YOLO26 + Supervision + InsightFace)"
+description = "He thong quan ly lop hoc thong minh (diem danh thu cong + Cron + bao cao cam thi)"
 readme = "README.md"
 authors = [
     { name = "Võ Hoàng Nam", email = "86737094+phidoivox@users.noreply.github.com" }
@@ -18,28 +18,39 @@ dependencies = [
     "numpy>=1.26",
     "opencv-python-headless>=4.9",
     "ultralytics>=8.3",
-    "supervision>=0.25",
-    "insightface>=0.7",
+    "supervision>=0.25,<0.31",
+    "onnx>=1.16",
     "onnxruntime>=1.18",
     "python-multipart>=0.0.9",
     "loguru>=0.7",
     "pyyaml>=6",
-    "faiss-cpu>=1.8",
+    "pwdlib[bcrypt]>=0.2",
     "prometheus-fastapi-instrumentator>=7",
-    "roboflow>=1",
     "asyncpg>=0.29",
     "passlib[bcrypt]>=1.7.4",
-    "bcrypt>=4.0,<4.1",
-    "python-jose[cryptography]>=3.3.0",
+    "bcrypt>=4.1",
+    "pyjwt>=2.8",
     "apscheduler>=3.10.4",
     "openpyxl>=3.1.2",
+    "storage3>=2.31.0",
+]
+
+[project.optional-dependencies]
+training = [
+    "roboflow>=1",
+]
+
+[dependency-groups]
+dev = [
     "pytest>=8.0",
     "pytest-asyncio>=0.23",
-    "storage3>=2.31.0",
 ]
 
 [project.scripts]
 detect-ai = "detect_ai:main"
+detect-ai-doctor = "detect_ai.doctor:main"
+detect-ai-export-onnx = "detect_ai.ai.export_yolo_onnx:main"
+detect-ai-bench-yolo = "detect_ai.ai.bench_yolo_onnx:main"
 
 [build-system]
 requires = ["uv_build>=0.12.11,<0.13.0"]
