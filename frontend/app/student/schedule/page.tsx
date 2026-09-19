@@ -1,7 +1,9 @@
 "use client";
 
-import React, { useState, useEffect, useMemo } from "react";
+import React, { useState, useMemo } from "react";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { RoleGuard } from "@/components/layout/role-guard";
+import { formatWeekdayDate, todayVN } from "@/lib/date";
 import { getStudentSchedule, StudentSchedule } from "@/lib/api";
 import { LeaveRequestModal } from "@/components/student/leave-request-modal";
 import {
@@ -19,9 +21,18 @@ import {
 } from "lucide-react";
 
 export default function StudentSchedulePage() {
-  const [schedules, setSchedules] = useState<StudentSchedule[]>([]);
-  const [loading, setLoading] = useState<boolean>(true);
-  const [error, setError] = useState<string | null>(null);
+  const queryClient = useQueryClient();
+  const scheduleQuery = useQuery({
+    queryKey: ["student-schedule"],
+    queryFn: getStudentSchedule,
+  });
+  const schedules: StudentSchedule[] = scheduleQuery.data ?? [];
+  const loading = scheduleQuery.isPending;
+  const error = scheduleQuery.isError
+    ? scheduleQuery.error instanceof Error
+      ? scheduleQuery.error.message
+      : "Không thể tải thời khóa biểu."
+    : null;
 
   // Filters
   const [selectedCourse, setSelectedCourse] = useState<string>("ALL");
@@ -31,22 +42,8 @@ export default function StudentSchedulePage() {
   const [isModalOpen, setIsModalOpen] = useState<boolean>(false);
   const [preselectedScheduleId, setPreselectedScheduleId] = useState<number | null>(null);
 
-  const fetchSchedule = async () => {
-    try {
-      setLoading(true);
-      setError(null);
-      const data = await getStudentSchedule();
-      setSchedules(data);
-    } catch (err: any) {
-      setError(err?.message || "Không thể tải thời khóa biểu.");
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  useEffect(() => {
-    fetchSchedule();
-  }, []);
+  const fetchSchedule = () =>
+    queryClient.invalidateQueries({ queryKey: ["student-schedule"] });
 
   // Extract unique course names for filter
   const uniqueCourses = useMemo(() => {
@@ -61,33 +58,27 @@ export default function StudentSchedulePage() {
 
   // Filtered schedules
   const filteredSchedules = useMemo(() => {
-    const todayStr = new Date().toISOString().split("T")[0];
+    const today = todayVN();
     return schedules.filter((s) => {
       if (selectedCourse !== "ALL" && s.course_name !== selectedCourse) {
         return false;
       }
-      if (timeFilter === "UPCOMING" && s.study_date < todayStr) {
+      if (timeFilter === "UPCOMING" && s.study_date < today) {
         return false;
       }
-      if (timeFilter === "PAST" && s.study_date >= todayStr) {
+      if (timeFilter === "PAST" && s.study_date >= today) {
         return false;
       }
       return true;
     });
   }, [schedules, selectedCourse, timeFilter]);
 
-  const todayStr = new Date().toISOString().split("T")[0];
+  const todayStr = todayVN();
   const upcomingCount = schedules.filter((s) => s.study_date >= todayStr).length;
 
   const formatDate = (dateStr: string) => {
     try {
-      const d = new Date(dateStr);
-      const days = ["Chủ nhật", "Thứ 2", "Thứ 3", "Thứ 4", "Thứ 5", "Thứ 6", "Thứ 7"];
-      const dayOfWeek = days[d.getDay()];
-      const dd = String(d.getDate()).padStart(2, "0");
-      const mm = String(d.getMonth() + 1).padStart(2, "0");
-      const yyyy = d.getFullYear();
-      return `${dayOfWeek}, ${dd}/${mm}/${yyyy}`;
+      return formatWeekdayDate(new Date(dateStr + "T00:00:00"));
     } catch {
       return dateStr;
     }

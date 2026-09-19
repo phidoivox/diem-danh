@@ -1,7 +1,9 @@
 "use client";
 
-import React, { useState, useEffect, useMemo } from "react";
+import React, { useState, useMemo } from "react";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { RoleGuard } from "@/components/layout/role-guard";
+import { formatTime as formatTimeVN } from "@/lib/date";
 import { getStudentAttendance, StudentAttendance } from "@/lib/api";
 import {
   CheckSquare,
@@ -17,31 +19,26 @@ import {
 } from "lucide-react";
 
 export default function StudentAttendancePage() {
-  const [attendances, setAttendances] = useState<StudentAttendance[]>([]);
-  const [loading, setLoading] = useState<boolean>(true);
-  const [error, setError] = useState<string | null>(null);
+  const queryClient = useQueryClient();
+  const attendanceQuery = useQuery({
+    queryKey: ["student-attendance"],
+    queryFn: getStudentAttendance,
+  });
+  const attendances: StudentAttendance[] = attendanceQuery.data ?? [];
+  const loading = attendanceQuery.isPending;
+  const error = attendanceQuery.isError
+    ? attendanceQuery.error instanceof Error
+      ? attendanceQuery.error.message
+      : "Không thể tải lịch sử điểm danh."
+    : null;
 
   // Filters
   const [courseFilter, setCourseFilter] = useState<string>("ALL");
   const [statusFilter, setStatusFilter] = useState<string>("ALL");
   const [searchTerm, setSearchTerm] = useState<string>("");
 
-  const fetchAttendance = async () => {
-    try {
-      setLoading(true);
-      setError(null);
-      const data = await getStudentAttendance();
-      setAttendances(data);
-    } catch (err: any) {
-      setError(err?.message || "Không thể tải lịch sử điểm danh.");
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  useEffect(() => {
-    fetchAttendance();
-  }, []);
+  const fetchAttendance = () =>
+    queryClient.invalidateQueries({ queryKey: ["student-attendance"] });
 
   // Distinct courses
   const uniqueCourses = useMemo(() => {
@@ -103,8 +100,7 @@ export default function StudentAttendancePage() {
     if (!timeStr) return "--:--";
     try {
       if (timeStr.includes("T")) {
-        const d = new Date(timeStr);
-        return d.toLocaleTimeString("vi-VN", { hour: "2-digit", minute: "2-digit", second: "2-digit" });
+        return formatTimeVN(new Date(timeStr));
       }
       return timeStr.slice(0, 5);
     } catch {
@@ -299,7 +295,7 @@ export default function StudentAttendancePage() {
               <CheckSquare size={36} className="text-slate-300 mx-auto mb-2" />
               <h3 className="text-sm font-semibold text-slate-800">Chưa có dữ liệu điểm danh</h3>
               <p className="text-xs text-slate-500 mt-1">
-                Các lượt điểm danh quét qua FaceID hoặc giáo viên điểm danh sẽ hiển thị tại đây.
+                Các lượt điểm danh do giáo viên ghi nhận sẽ hiển thị tại đây.
               </p>
             </div>
           ) : (

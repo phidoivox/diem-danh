@@ -1,12 +1,13 @@
 "use client";
 
-import React, { useState, useEffect, useCallback } from "react";
+import React, { useState, useEffect } from "react";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { RoleGuard } from "@/components/layout/role-guard";
 import {
   AdminClass,
   ExamBanReport,
   getAdminClasses,
-  getTeacherExamBanReport,
+  getAdminExamBanReport,
   downloadAllSchoolExamBanExcel,
   getAdminUsers,
 } from "@/lib/api";
@@ -26,66 +27,50 @@ import {
 } from "lucide-react";
 
 export default function AdminReportsPage() {
-  const [classes, setClasses] = useState<AdminClass[]>([]);
-  const [totalStudents, setTotalStudents] = useState<number>(0);
+  const queryClient = useQueryClient();
   const [selectedClassId, setSelectedClassId] = useState<number | "">("");
-  const [reportData, setReportData] = useState<ExamBanReport | null>(null);
   const [statusFilter, setStatusFilter] = useState<"ALL" | "WARNING" | "BANNED">("ALL");
 
-  const [isLoadingClasses, setIsLoadingClasses] = useState(true);
-  const [isLoadingReport, setIsLoadingReport] = useState(false);
   const [isDownloading, setIsDownloading] = useState(false);
   const [feedbackMsg, setFeedbackMsg] = useState<{ type: "success" | "error"; text: string } | null>(null);
 
-  // Fetch classes and students count
+  const classesQuery = useQuery({
+    queryKey: ["admin-classes", 1, ""],
+    queryFn: () => getAdminClasses({ page: 1, size: 100, q: "" }),
+  });
+  const studentsCountQuery = useQuery({
+    queryKey: ["admin-users", 1, "STUDENT", "count"],
+    queryFn: () => getAdminUsers({ role: "STUDENT", size: 1 }),
+  });
+  const classes: AdminClass[] = classesQuery.data?.items ?? [];
+  const totalStudents = studentsCountQuery.data?.total ?? 0;
+  const isLoadingClasses = classesQuery.isPending;
+
+  const reportQuery = useQuery({
+    queryKey: ["admin-report", selectedClassId === "" ? 0 : Number(selectedClassId)],
+    queryFn: () => getAdminExamBanReport(Number(selectedClassId)),
+    enabled: selectedClassId !== "",
+  });
+  const reportData: ExamBanReport | null = reportQuery.data ?? null;
+  const isLoadingReport = reportQuery.isPending || reportQuery.isFetching;
+
+  // Mặc định chọn lớp đầu tiên khi danh sách về.
   useEffect(() => {
-    async function initData() {
-      setIsLoadingClasses(true);
-      try {
-        const [clsRes, userRes] = await Promise.all([
-          getAdminClasses({ size: 100 }),
-          getAdminUsers({ role: "STUDENT", size: 1 }),
-        ]);
-        setClasses(clsRes.items || []);
-        setTotalStudents(userRes.total || 0);
-
-        if (clsRes.items && clsRes.items.length > 0) {
-          setSelectedClassId(clsRes.items[0].id);
-        }
-      } catch (err: any) {
-        setFeedbackMsg({
-          type: "error",
-          text: err.message || "Không thể tải dữ liệu khởi tạo",
-        });
-      } finally {
-        setIsLoadingClasses(false);
-      }
+    if (selectedClassId === "" && classes.length > 0) {
+      setSelectedClassId(classes[0].id);
     }
-    initData();
-  }, []);
+  }, [classes, selectedClassId]);
 
-  // Fetch report for selected class
-  const fetchReport = useCallback(async (classId: number) => {
-    setIsLoadingReport(true);
-    try {
-      const data = await getTeacherExamBanReport(classId);
-      setReportData(data);
-    } catch (err: any) {
+  // Surface lỗi query lên feedback chung.
+  useEffect(() => {
+    const err = classesQuery.error ?? reportQuery.error;
+    if (err) {
       setFeedbackMsg({
         type: "error",
-        text: err.message || "Không thể tải báo cáo cho lớp này",
+        text: err instanceof Error ? err.message : "Không thể tải dữ liệu báo cáo",
       });
-      setReportData(null);
-    } finally {
-      setIsLoadingReport(false);
     }
-  }, []);
-
-  useEffect(() => {
-    if (selectedClassId) {
-      fetchReport(Number(selectedClassId));
-    }
-  }, [selectedClassId, fetchReport]);
+  }, [classesQuery.error, reportQuery.error]);
 
   // Download All School Excel
   const handleDownloadAllExcel = async () => {
@@ -210,7 +195,7 @@ export default function AdminReportsPage() {
               </div>
             </div>
             <div className="text-2xl font-bold font-mono tabular-nums text-amber-700 mt-2">
-              ≥ 15%
+              ≥ {reportData?.warning_percent ?? 15}%
             </div>
             <p className="text-[11px] text-slate-400 mt-1">Cảnh báo vắng tích lũy sớm</p>
           </div>
@@ -223,9 +208,9 @@ export default function AdminReportsPage() {
               </div>
             </div>
             <div className="text-2xl font-bold font-mono tabular-nums text-rose-700 mt-2">
-              ≥ 20%
+              ≥ {reportData?.ban_percent ?? 20}%
             </div>
-            <p className="text-[11px] text-slate-400 mt-1">Vắng trên 20% số buổi cả kỳ</p>
+            <p className="text-[11px] text-slate-400 mt-1">Vắng trên {reportData?.ban_percent ?? 20}% số buổi cả kỳ</p>
           </div>
         </div>
 
@@ -361,9 +346,9 @@ export default function AdminReportsPage() {
                       <td className="px-4 py-3 text-center font-mono tabular-nums">
                         <span
                           className={`font-semibold ${
-                            (st.cumulative_rate ?? 0) >= 20
+                            st.is_banned
                               ? "text-rose-600"
-                              : (st.cumulative_rate ?? 0) >= 15
+                              : st.is_warning
                               ? "text-amber-600"
                               : "text-slate-700"
                           }`}
@@ -374,11 +359,7 @@ export default function AdminReportsPage() {
                       <td className="px-4 py-3 text-center font-mono tabular-nums">
                         <span
                           className={`font-semibold ${
-                            (st.semester_rate ?? 0) >= 20
-                              ? "text-rose-600"
-                              : (st.semester_rate ?? 0) >= 15
-                              ? "text-amber-600"
-                              : "text-slate-700"
+                            st.is_banned ? "text-rose-600" : "text-slate-700"
                           }`}
                         >
                           {(st.semester_rate ?? 0).toFixed(1)}%

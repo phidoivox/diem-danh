@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useState, useEffect } from "react";
+import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { manualOverrideAttendance } from "@/lib/api";
 import {
   X,
@@ -82,8 +83,35 @@ export function ManualOverrideModal({
 }: ManualOverrideModalProps) {
   const [selectedStatus, setSelectedStatus] = useState<string>("PRESENT");
   const [note, setNote] = useState<string>("");
-  const [isSubmitting, setIsSubmitting] = useState<boolean>(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const queryClient = useQueryClient();
+
+  const overrideMutation = useMutation({
+    mutationFn: (payload: {
+      attendanceId: number;
+      status: string;
+      note: string;
+      scheduleId?: number | null;
+      studentId: number;
+    }) =>
+      manualOverrideAttendance(payload.attendanceId, {
+        status: payload.status,
+        note: payload.note,
+        schedule_id: payload.scheduleId || undefined,
+        student_id: payload.studentId,
+      }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["teacher-live"] });
+      onSuccess();
+      onClose();
+    },
+    onError: (err: unknown) => {
+      setErrorMessage(
+        err instanceof Error ? err.message : "Không thể cập nhật điểm danh."
+      );
+    },
+  });
+  const isSubmitting = overrideMutation.isPending;
 
   useEffect(() => {
     if (target) {
@@ -95,40 +123,33 @@ export function ManualOverrideModal({
 
   if (!isOpen || !target) return null;
 
-  const handleSubmit = async (e: React.FormEvent) => {
+  const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (!target) return;
 
-    try {
-      setIsSubmitting(true);
-      setErrorMessage(null);
-
-      await manualOverrideAttendance(target.attendanceId || 0, {
-        status: selectedStatus,
-        note: note.trim(),
-        schedule_id: target.scheduleId || undefined,
-        student_id: target.studentId,
-      });
-
-      onSuccess();
-      onClose();
-    } catch (err: any) {
-      setErrorMessage(err?.message || "Không thể cập nhật điểm danh.");
-    } finally {
-      setIsSubmitting(false);
-    }
+    setErrorMessage(null);
+    overrideMutation.mutate({
+      attendanceId: target.attendanceId || 0,
+      status: selectedStatus,
+      note: note.trim(),
+      scheduleId: target.scheduleId || undefined,
+      studentId: target.studentId,
+    });
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/50 backdrop-blur-[2px]">
-      <div className="relative w-full max-w-lg bg-white rounded-lg border border-slate-200 shadow-xl overflow-hidden animate-in fade-in zoom-in-95 duration-150">
-        {/* Header */}
-        <div className="flex items-center justify-between px-6 py-4 border-b border-slate-200 bg-slate-50/50">
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-slate-900/50 backdrop-blur-[2px] overflow-y-auto">
+      <form
+        onSubmit={handleSubmit}
+        className="relative w-full max-w-lg max-h-[90vh] flex flex-col bg-white rounded-xl border border-slate-200 shadow-2xl overflow-hidden animate-in fade-in zoom-in-95 duration-150"
+      >
+        {/* Header - Fixed */}
+        <div className="flex items-center justify-between px-5 py-3.5 border-b border-slate-200 bg-slate-50/70 shrink-0">
           <div>
-            <h3 className="text-base font-semibold text-slate-900">
+            <h3 className="text-sm sm:text-base font-semibold text-slate-900">
               Sửa điểm danh thủ công
             </h3>
-            <p className="text-xs text-slate-500 mt-0.5">
+            <p className="text-xs text-slate-500">
               Cập nhật trạng thái điểm danh cho buổi học
             </p>
           </div>
@@ -142,42 +163,40 @@ export function ManualOverrideModal({
           </button>
         </div>
 
-        {/* Student Info Card */}
-        <div className="px-6 pt-4 pb-2">
-          <div className="p-3 bg-slate-50 border border-slate-200 rounded-md">
-            <div className="flex items-center justify-between">
-              <div>
-                <div className="text-sm font-medium text-slate-900">
+        {/* Scrollable Form Body */}
+        <div className="flex-1 overflow-y-auto p-4 sm:p-5 space-y-3.5">
+          {/* Student Info Card */}
+          <div className="p-2.5 bg-slate-50 border border-slate-200 rounded-lg">
+            <div className="flex items-center justify-between gap-2">
+              <div className="min-w-0">
+                <div className="text-sm font-semibold text-slate-900 truncate">
                   {target.studentName}
                 </div>
-                <div className="flex items-center gap-2 text-xs text-slate-500 mt-0.5">
+                <div className="flex items-center gap-1.5 text-xs text-slate-500 mt-0.5">
                   <span className="font-mono tabular-nums text-slate-700 font-medium">
                     {target.studentCode}
                   </span>
                   {target.className && (
                     <>
                       <span>•</span>
-                      <span>{target.className}</span>
+                      <span className="truncate">{target.className}</span>
                     </>
                   )}
                 </div>
               </div>
-              <div className="text-right">
-                <span className="text-[11px] text-slate-500 block mb-0.5">
+              <div className="text-right shrink-0">
+                <span className="text-[10px] text-slate-500 block">
                   Hiện tại
                 </span>
-                <span className="inline-flex items-center px-2 py-0.5 rounded text-[11px] font-medium bg-slate-200 text-slate-700">
+                <span className="inline-flex items-center px-2 py-0.5 rounded text-[11px] font-semibold bg-slate-200 text-slate-700">
                   {target.currentStatus}
                 </span>
               </div>
             </div>
           </div>
-        </div>
 
-        {/* Form Body */}
-        <form onSubmit={handleSubmit} className="px-6 py-4 space-y-4">
           {errorMessage && (
-            <div className="p-3 rounded-md bg-rose-50 border border-rose-200 text-rose-700 text-xs flex items-start gap-2">
+            <div className="p-2.5 rounded-md bg-rose-50 border border-rose-200 text-rose-700 text-xs flex items-start gap-2">
               <AlertCircle size={15} className="mt-0.5 shrink-0" />
               <span>{errorMessage}</span>
             </div>
@@ -185,45 +204,48 @@ export function ManualOverrideModal({
 
           {/* Status Selection */}
           <div>
-            <label className="block text-xs font-semibold text-slate-700 uppercase tracking-wider mb-2">
+            <label className="block text-xs font-semibold text-slate-700 uppercase tracking-wider mb-1.5">
               Chọn trạng thái mới <span className="text-rose-500">*</span>
             </label>
-            <div className="grid grid-cols-1 gap-2">
-              {STATUS_OPTIONS.map((opt) => {
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+              {STATUS_OPTIONS.map((opt, idx) => {
                 const Icon = opt.icon;
                 const isSelected = selectedStatus === opt.value;
+                const isLastAndOdd =
+                  idx === STATUS_OPTIONS.length - 1 &&
+                  STATUS_OPTIONS.length % 2 !== 0;
                 return (
                   <label
                     key={opt.value}
-                    className={`flex items-center justify-between p-2.5 rounded-md border text-sm cursor-pointer transition-all ${
+                    className={`relative flex items-center justify-between p-2 sm:p-2.5 rounded-lg border text-xs cursor-pointer transition-all ${
+                      isLastAndOdd ? "sm:col-span-2" : ""
+                    } ${
                       isSelected
                         ? opt.activeClass
-                        : "border-slate-200 hover:border-slate-300 hover:bg-slate-50/50"
+                        : "border-slate-200 hover:border-slate-300 hover:bg-slate-50/60"
                     }`}
                   >
-                    <div className="flex items-center gap-3">
+                    <div className="flex items-center gap-2 min-w-0">
                       <input
                         type="radio"
                         name="override_status"
                         value={opt.value}
                         checked={isSelected}
                         onChange={() => setSelectedStatus(opt.value)}
-                        className="text-slate-900 focus:ring-slate-400 h-4 w-4"
+                        className="text-slate-900 focus:ring-slate-400 h-3.5 w-3.5 shrink-0"
                       />
-                      <div>
-                        <div className="flex items-center gap-2">
-                          <Icon size={14} className="text-slate-600" />
-                          <span className="font-medium text-slate-900">
-                            {opt.label}
-                          </span>
+                      <div className="min-w-0">
+                        <div className="flex items-center gap-1.5 font-medium text-slate-900">
+                          <Icon size={14} className="shrink-0 text-slate-600" />
+                          <span className="truncate">{opt.label}</span>
                         </div>
-                        <p className="text-xs text-slate-500 mt-0.5">
+                        <p className="text-[11px] text-slate-500 truncate max-w-[180px] sm:max-w-none">
                           {opt.description}
                         </p>
                       </div>
                     </div>
                     <span
-                      className={`px-2 py-0.5 rounded text-[11px] font-semibold border ${opt.badgeClass}`}
+                      className={`shrink-0 ml-1.5 px-1.5 py-0.5 rounded text-[10px] font-semibold border ${opt.badgeClass}`}
                     >
                       {opt.value}
                     </span>
@@ -245,55 +267,57 @@ export function ManualOverrideModal({
               id="override-note"
               value={note}
               onChange={(e) => setNote(e.target.value)}
-              placeholder="VD: Sinh viên vào muộn có lý do chính đáng, Camera nhận diện nhầm,..."
+              placeholder="VD: Sinh viên vào muộn có lý do chính đáng, máy nhận diện nhầm,..."
               rows={2}
               maxLength={250}
-              className="w-full px-3 py-2 text-sm rounded-md border border-slate-200 bg-white text-slate-900 placeholder:text-slate-400 focus:outline-none focus:ring-1 focus:ring-slate-400 focus:border-slate-400 transition-colors"
+              className="w-full px-3 py-1.5 text-xs sm:text-sm rounded-lg border border-slate-200 bg-white text-slate-900 placeholder:text-slate-400 focus:outline-none focus:ring-1 focus:ring-slate-400 focus:border-slate-400 transition-colors resize-none"
             />
-            <div className="flex justify-between text-[11px] text-slate-400 mt-1">
-              <span>Ghi chú sẽ được lưu vào lịch sử đối soát học vụ</span>
+            <div className="flex justify-between text-[11px] text-slate-400 mt-0.5">
+              <span>Lưu vào lịch sử đối soát học vụ</span>
               <span className="font-mono tabular-nums">{note.length}/250</span>
             </div>
           </div>
 
           {/* Audit Callout */}
-          <div className="p-3 rounded-md bg-slate-50 border border-slate-200 text-slate-600 text-xs flex items-start gap-2">
-            <Info size={15} className="mt-0.5 shrink-0 text-slate-500" />
+          <div className="p-2.5 rounded-lg bg-slate-50 border border-slate-200 text-slate-600 text-[11px] flex items-start gap-2">
+            <Info size={14} className="mt-0.5 shrink-0 text-slate-500" />
             <span className="leading-relaxed">
               Điểm danh sau khi can thiệp sẽ gắn cờ{" "}
-              <strong className="text-slate-800">Sửa thủ công</strong>. Cron tính
-              điểm chuyên cần tự động 23:59 sẽ bảo lưu trạng thái này và không ghi
-              đè.
+              <strong className="text-slate-800 font-semibold">
+                Sửa thủ công
+              </strong>
+              . Cron chuyên cần tự động 23:59 sẽ bảo lưu trạng thái này và không
+              ghi đè.
             </span>
           </div>
+        </div>
 
-          {/* Action Buttons */}
-          <div className="flex items-center justify-end gap-2 pt-2 border-t border-slate-200">
-            <button
-              type="button"
-              onClick={onClose}
-              disabled={isSubmitting}
-              className="px-3.5 py-1.5 rounded-md text-sm font-medium text-slate-600 hover:text-slate-900 hover:bg-slate-100 border border-transparent transition-colors disabled:opacity-50"
-            >
-              Hủy
-            </button>
-            <button
-              type="submit"
-              disabled={isSubmitting}
-              className="inline-flex items-center gap-1.5 px-4 py-1.5 rounded-md text-sm font-medium bg-slate-900 text-white hover:bg-slate-800 border border-slate-900 shadow-sm transition-colors disabled:opacity-50"
-            >
-              {isSubmitting ? (
-                <>
-                  <Loader2 size={14} className="animate-spin" />
-                  <span>Đang lưu...</span>
-                </>
-              ) : (
-                <span>Lưu thay đổi</span>
-              )}
-            </button>
-          </div>
-        </form>
-      </div>
+        {/* Footer Action Buttons - Always Visible (Sticky Bottom) */}
+        <div className="flex items-center justify-end gap-2 px-5 py-3 border-t border-slate-200 bg-slate-50/80 shrink-0">
+          <button
+            type="button"
+            onClick={onClose}
+            disabled={isSubmitting}
+            className="px-3.5 py-1.5 rounded-lg text-xs sm:text-sm font-medium text-slate-600 hover:text-slate-900 hover:bg-slate-200/60 border border-transparent transition-colors disabled:opacity-50"
+          >
+            Hủy
+          </button>
+          <button
+            type="submit"
+            disabled={isSubmitting}
+            className="inline-flex items-center gap-1.5 px-4 py-1.5 rounded-lg text-xs sm:text-sm font-medium bg-slate-900 text-white hover:bg-slate-800 border border-slate-900 shadow-sm transition-colors disabled:opacity-50"
+          >
+            {isSubmitting ? (
+              <>
+                <Loader2 size={14} className="animate-spin" />
+                <span>Đang lưu...</span>
+              </>
+            ) : (
+              <span>Lưu thay đổi</span>
+            )}
+          </button>
+        </div>
+      </form>
     </div>
   );
 }

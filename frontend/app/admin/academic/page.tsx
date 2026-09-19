@@ -1,6 +1,7 @@
 "use client";
 
-import React, { useState, useEffect, useCallback } from "react";
+import React, { useState, useEffect } from "react";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { RoleGuard } from "@/components/layout/role-guard";
 import {
   AdminClass,
@@ -39,26 +40,41 @@ import {
 } from "lucide-react";
 
 export default function AdminAcademicPage() {
+  const queryClient = useQueryClient();
   const [activeTab, setActiveTab] = useState<"CLASSES" | "SCHEDULES">("CLASSES");
 
-  // Classes state
-  const [classes, setClasses] = useState<AdminClass[]>([]);
-  const [classesTotal, setClassesTotal] = useState(0);
+  // Classes state (page/q là một phần của queryKey chuẩn)
   const [classesPage, setClassesPage] = useState(1);
   const [classesSize] = useState(15);
   const [classesSearch, setClassesSearch] = useState("");
-  const [isClassesLoading, setIsClassesLoading] = useState(true);
+  const classesQuery = useQuery({
+    queryKey: ["admin-classes", classesPage, classesSearch],
+    queryFn: () =>
+      getAdminClasses({
+        page: classesPage,
+        size: classesSize,
+        q: classesSearch,
+      }),
+  });
+  const classes: AdminClass[] = classesQuery.data?.items ?? [];
+  const classesTotal = classesQuery.data?.total ?? 0;
+  const isClassesLoading = classesQuery.isPending;
 
   // Schedules state
-  const [schedules, setSchedules] = useState<AdminSchedule[]>([]);
   const [filterClassId, setFilterClassId] = useState<number | "">("");
   const [filterDate, setFilterDate] = useState("");
   const [filterRoom, setFilterRoom] = useState("");
-  const [isSchedulesLoading, setIsSchedulesLoading] = useState(false);
-
-  // Teachers & Students lookup for dropdowns
-  const [teachers, setTeachers] = useState<AdminUser[]>([]);
-  const [availableStudents, setAvailableStudents] = useState<AdminUser[]>([]);
+  const schedulesQuery = useQuery({
+    queryKey: ["admin-schedules"],
+    queryFn: () =>
+      getAdminSchedules({
+        class_id: filterClassId ? Number(filterClassId) : undefined,
+        study_date: filterDate || undefined,
+        room_name: filterRoom || undefined,
+      }),
+  });
+  const schedules: AdminSchedule[] = schedulesQuery.data ?? [];
+  const isSchedulesLoading = schedulesQuery.isPending;
 
   // Class create/edit modal (dùng chung form; có editingClass = chế độ sửa)
   const [isCreateClassOpen, setIsCreateClassOpen] = useState(false);
@@ -68,16 +84,19 @@ export default function AdminAcademicPage() {
   const [newTeacherId, setNewTeacherId] = useState<number | "">("");
   const [newSemester, setNewSemester] = useState("2026.1");
   const [newTotalSessions, setNewTotalSessions] = useState(15);
-  const [isCreatingClass, setIsCreatingClass] = useState(false);
   const [createClassError, setCreateClassError] = useState<string | null>(null);
 
-  // Class students modal
+  // Class students modal (danh sách ghi danh là query theo lớp đang mở)
   const [selectedClassForStudents, setSelectedClassForStudents] = useState<AdminClass | null>(null);
-  const [enrolledStudents, setEnrolledStudents] = useState<StudentInClass[]>([]);
-  const [isLoadingStudents, setIsLoadingStudents] = useState(false);
   const [selectedStudentToAdd, setSelectedStudentToAdd] = useState<number | "">("");
-  const [isAddingStudent, setIsAddingStudent] = useState(false);
   const [studentsModalError, setStudentsModalError] = useState<string | null>(null);
+  const studentsQuery = useQuery({
+    queryKey: ["admin-classes", selectedClassForStudents?.id ?? 0, "students"],
+    queryFn: () => getAdminClassStudents(selectedClassForStudents!.id),
+    enabled: selectedClassForStudents !== null,
+  });
+  const enrolledStudents: StudentInClass[] = studentsQuery.data ?? [];
+  const isLoadingStudents = studentsQuery.isPending && selectedClassForStudents !== null;
 
   // Schedule modal (tạo mới khi editingSchedule = null, sửa khi có giá trị)
   const [isScheduleModalOpen, setIsScheduleModalOpen] = useState(false);
@@ -90,70 +109,144 @@ export default function AdminAcademicPage() {
   const [classToDelete, setClassToDelete] = useState<AdminClass | null>(null);
   const [studentToRemove, setStudentToRemove] = useState<{ id: number; code: string } | null>(null);
   const [scheduleToDelete, setScheduleToDelete] = useState<AdminSchedule | null>(null);
-  // Pending riêng từng dialog: onConfirm async, chặn double-click + hiện "Đang xử lý..."
-  const [isDeletingClass, setIsDeletingClass] = useState(false);
-  const [isRemovingStudent, setIsRemovingStudent] = useState(false);
-  const [isDeletingSchedule, setIsDeletingSchedule] = useState(false);
 
-  // Load teachers for class creation
+  const invalidateClasses = () =>
+    queryClient.invalidateQueries({ queryKey: ["admin-classes"] });
+  const invalidateStudents = () => {
+    if (selectedClassForStudents) {
+      queryClient.invalidateQueries({
+        queryKey: ["admin-classes", selectedClassForStudents.id, "students"],
+      });
+    }
+  };
+
+  const saveClassMutation = useMutation({
+    mutationFn: (payload: {
+      class_code: string;
+      course_name: string;
+      teacher_id: number;
+      semester: string;
+      total_sessions: number;
+    }) =>
+      editingClass
+        ? updateAdminClass(editingClass.id, payload)
+        : createAdminClass(payload),
+    onSuccess: (_data, payload) => {
+      setFeedbackMsg({
+        type: "success",
+        text: editingClass
+          ? `Đã cập nhật lớp học ${payload.class_code}`
+          : "Tạo lớp học phần mới thành công",
+      });
+      setIsCreateClassOpen(false);
+      setEditingClass(null);
+      setNewClassCode("");
+      setNewCourseName("");
+      invalidateClasses();
+    },
+    onError: (err: unknown) => {
+      setCreateClassError(
+        err instanceof Error ? err.message : "Không thể lưu lớp học phần"
+      );
+    },
+  });
+  const isCreatingClass = saveClassMutation.isPending;
+
+  const deleteClassMutation = useMutation({
+    mutationFn: (id: number) => deleteAdminClass(id),
+    onSuccess: () => {
+      setFeedbackMsg({
+        type: "success",
+        text: `Đã xóa lớp học ${classToDelete?.class_code ?? ""}`,
+      });
+      setClassToDelete(null);
+      invalidateClasses();
+    },
+    onError: (err: unknown) => {
+      setFeedbackMsg({
+        type: "error",
+        text: err instanceof Error ? err.message : "Không thể xóa lớp học",
+      });
+    },
+  });
+  const isDeletingClass = deleteClassMutation.isPending;
+
+  const addStudentMutation = useMutation({
+    mutationFn: (studentId: number) =>
+      addStudentToClass(selectedClassForStudents!.id, studentId),
+    onSuccess: () => {
+      setSelectedStudentToAdd("");
+      invalidateStudents();
+      invalidateClasses();
+    },
+    onError: (err: unknown) => {
+      setStudentsModalError(
+        err instanceof Error ? err.message : "Không thể thêm sinh viên vào lớp"
+      );
+    },
+  });
+  const isAddingStudent = addStudentMutation.isPending;
+
+  const removeStudentMutation = useMutation({
+    mutationFn: (studentId: number) =>
+      removeStudentFromClass(selectedClassForStudents!.id, studentId),
+    onSuccess: () => {
+      setStudentToRemove(null);
+      invalidateStudents();
+      invalidateClasses();
+    },
+    onError: (err: unknown) => {
+      setStudentsModalError(
+        err instanceof Error ? err.message : "Không thể xóa sinh viên khỏi lớp"
+      );
+    },
+  });
+  const isRemovingStudent = removeStudentMutation.isPending;
+
+  const deleteScheduleMutation = useMutation({
+    mutationFn: (id: number) => deleteAdminSchedule(id),
+    onSuccess: () => {
+      setFeedbackMsg({ type: "success", text: "Đã xóa lịch học thành công" });
+      setScheduleToDelete(null);
+      queryClient.invalidateQueries({ queryKey: ["admin-schedules"] });
+    },
+    onError: (err: unknown) => {
+      setFeedbackMsg({
+        type: "error",
+        text: err instanceof Error ? err.message : "Không thể xóa lịch học",
+      });
+    },
+  });
+  const isDeletingSchedule = deleteScheduleMutation.isPending;
+
+  // Teachers & Students lookup cho dropdown (dùng lại key admin-users, không chạm trang users)
+  const teachersQuery = useQuery({
+    queryKey: ["admin-users", 1, "TEACHER", ""],
+    queryFn: () => getAdminUsers({ role: "TEACHER", size: 100 }),
+  });
+  const studentsLookupQuery = useQuery({
+    queryKey: ["admin-users", 1, "STUDENT", ""],
+    queryFn: () => getAdminUsers({ role: "STUDENT", size: 200 }),
+  });
+  const teachers: AdminUser[] = teachersQuery.data?.items ?? [];
+  const availableStudents: AdminUser[] = studentsLookupQuery.data?.items ?? [];
+
+  // Refetch schedules khi filter đổi (giữ key chuẩn ["admin-schedules"] đúng verbatim)
   useEffect(() => {
-    getAdminUsers({ role: "TEACHER", size: 100 })
-      .then((res) => setTeachers(res.items || []))
-      .catch(() => {});
-
-    getAdminUsers({ role: "STUDENT", size: 200 })
-      .then((res) => setAvailableStudents(res.items || []))
-      .catch(() => {});
-  }, []);
-
-  // Fetch classes
-  const fetchClasses = useCallback(async () => {
-    setIsClassesLoading(true);
-    try {
-      const res = await getAdminClasses({
-        page: classesPage,
-        size: classesSize,
-        q: classesSearch,
-      });
-      setClasses(res.items || []);
-      setClassesTotal(res.total || 0);
-    } catch (err: any) {
-      setFeedbackMsg({
-        type: "error",
-        text: err.message || "Không thể tải danh sách lớp học",
-      });
-    } finally {
-      setIsClassesLoading(false);
-    }
-  }, [classesPage, classesSize, classesSearch]);
-
-  // Fetch schedules
-  const fetchSchedules = useCallback(async () => {
-    setIsSchedulesLoading(true);
-    try {
-      const res = await getAdminSchedules({
-        class_id: filterClassId ? Number(filterClassId) : undefined,
-        study_date: filterDate || undefined,
-        room_name: filterRoom || undefined,
-      });
-      setSchedules(res || []);
-    } catch (err: any) {
-      setFeedbackMsg({
-        type: "error",
-        text: err.message || "Không thể tải danh sách thời khóa biểu",
-      });
-    } finally {
-      setIsSchedulesLoading(false);
-    }
+    queryClient.invalidateQueries({ queryKey: ["admin-schedules"] });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [filterClassId, filterDate, filterRoom]);
 
+  // Surface query lỗi lớp lên feedback chung
   useEffect(() => {
-    if (activeTab === "CLASSES") {
-      fetchClasses();
-    } else {
-      fetchSchedules();
+    if (classesQuery.isError) {
+      const msg =
+        classesQuery.error instanceof Error
+          ? classesQuery.error.message
+          : "Không thể tải danh sách lớp học";
+      setFeedbackMsg({ type: "error", text: msg });
     }
-  }, [activeTab, fetchClasses, fetchSchedules]);
+  }, [classesQuery.isError, classesQuery.error]);
 
   // Mở modal tạo lớp mới (reset form)
   const openCreateClassModal = () => {
@@ -181,8 +274,8 @@ export default function AdminAcademicPage() {
     setIsCreateClassOpen(true);
   };
 
-  // Handle class creation / update
-  const handleCreateClassSubmit = async (e: React.FormEvent) => {
+  // Handle class creation / update (qua useMutation + invalidate ["admin-classes"])
+  const handleCreateClassSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     setCreateClassError(null);
 
@@ -191,127 +284,57 @@ export default function AdminAcademicPage() {
       return;
     }
 
-    setIsCreatingClass(true);
-    try {
-      const payload = {
-        class_code: newClassCode.trim().toUpperCase(),
-        course_name: newCourseName.trim(),
-        teacher_id: Number(newTeacherId),
-        semester: newSemester.trim(),
-        total_sessions: Number(newTotalSessions) || 15,
-      };
-      if (editingClass) {
-        await updateAdminClass(editingClass.id, payload);
-        setFeedbackMsg({ type: "success", text: `Đã cập nhật lớp học ${payload.class_code}` });
-      } else {
-        await createAdminClass(payload);
-        setFeedbackMsg({ type: "success", text: "Tạo lớp học phần mới thành công" });
-      }
-      setIsCreateClassOpen(false);
-      setEditingClass(null);
-      setNewClassCode("");
-      setNewCourseName("");
-      fetchClasses();
-    } catch (err: any) {
-      setCreateClassError(err.message || "Không thể lưu lớp học phần");
-    } finally {
-      setIsCreatingClass(false);
-    }
+    saveClassMutation.mutate({
+      class_code: newClassCode.trim().toUpperCase(),
+      course_name: newCourseName.trim(),
+      teacher_id: Number(newTeacherId),
+      semester: newSemester.trim(),
+      total_sessions: Number(newTotalSessions) || 15,
+    });
   };
 
   // Handle class deletion
-  const handleDeleteClass = async (c: AdminClass) => {
+  const handleDeleteClass = (c: AdminClass) => {
     setClassToDelete(c);
   };
 
-  const handleConfirmDeleteClass = async () => {
+  const handleConfirmDeleteClass = () => {
     if (!classToDelete || isDeletingClass) return;
-    setIsDeletingClass(true);
-    try {
-      await deleteAdminClass(classToDelete.id);
-      setFeedbackMsg({ type: "success", text: `Đã xóa lớp học ${classToDelete.class_code}` });
-      setClassToDelete(null);
-      fetchClasses();
-    } catch (err: any) {
-      setFeedbackMsg({ type: "error", text: err.message || "Không thể xóa lớp học" });
-    } finally {
-      setIsDeletingClass(false);
-    }
+    deleteClassMutation.mutate(classToDelete.id);
   };
 
-  // Open students modal
-  const handleOpenStudentsModal = async (c: AdminClass) => {
+  // Open students modal (query tự fetch theo selectedClassForStudents)
+  const handleOpenStudentsModal = (c: AdminClass) => {
     setSelectedClassForStudents(c);
-    setIsLoadingStudents(true);
     setStudentsModalError(null);
-    try {
-      const res = await getAdminClassStudents(c.id);
-      setEnrolledStudents(res || []);
-    } catch (err: any) {
-      setStudentsModalError(err.message || "Không thể tải danh sách sinh viên trong lớp");
-    } finally {
-      setIsLoadingStudents(false);
-    }
   };
 
   // Add student to class
-  const handleAddStudent = async () => {
+  const handleAddStudent = () => {
     if (!selectedClassForStudents || !selectedStudentToAdd) return;
-    setIsAddingStudent(true);
     setStudentsModalError(null);
-    try {
-      await addStudentToClass(selectedClassForStudents.id, Number(selectedStudentToAdd));
-      const res = await getAdminClassStudents(selectedClassForStudents.id);
-      setEnrolledStudents(res || []);
-      setSelectedStudentToAdd("");
-      fetchClasses(); // refresh count
-    } catch (err: any) {
-      setStudentsModalError(err.message || "Không thể thêm sinh viên vào lớp");
-    } finally {
-      setIsAddingStudent(false);
-    }
+    addStudentMutation.mutate(Number(selectedStudentToAdd));
   };
 
   // Remove student from class
-  const handleRemoveStudent = async (studentId: number, studentCode: string) => {
+  const handleRemoveStudent = (studentId: number, studentCode: string) => {
     if (!selectedClassForStudents) return;
     setStudentToRemove({ id: studentId, code: studentCode });
   };
 
-  const handleConfirmRemoveStudent = async () => {
+  const handleConfirmRemoveStudent = () => {
     if (!selectedClassForStudents || !studentToRemove || isRemovingStudent) return;
-    setIsRemovingStudent(true);
-    try {
-      await removeStudentFromClass(selectedClassForStudents.id, studentToRemove.id);
-      const res = await getAdminClassStudents(selectedClassForStudents.id);
-      setEnrolledStudents(res || []);
-      setStudentToRemove(null);
-      fetchClasses(); // refresh count
-    } catch (err: any) {
-      setStudentsModalError(err.message || "Không thể xóa sinh viên khỏi lớp");
-    } finally {
-      setIsRemovingStudent(false);
-    }
+    removeStudentMutation.mutate(studentToRemove.id);
   };
 
   // Delete schedule
-  const handleDeleteSchedule = async (s: AdminSchedule) => {
+  const handleDeleteSchedule = (s: AdminSchedule) => {
     setScheduleToDelete(s);
   };
 
-  const handleConfirmDeleteSchedule = async () => {
+  const handleConfirmDeleteSchedule = () => {
     if (!scheduleToDelete || isDeletingSchedule) return;
-    setIsDeletingSchedule(true);
-    try {
-      await deleteAdminSchedule(scheduleToDelete.id);
-      setFeedbackMsg({ type: "success", text: "Đã xóa lịch học thành công" });
-      setScheduleToDelete(null);
-      fetchSchedules();
-    } catch (err: any) {
-      setFeedbackMsg({ type: "error", text: err.message || "Không thể xóa lịch học" });
-    } finally {
-      setIsDeletingSchedule(false);
-    }
+    deleteScheduleMutation.mutate(scheduleToDelete.id);
   };
 
   return (
@@ -933,7 +956,7 @@ export default function AdminAcademicPage() {
             setEditingSchedule(null);
           }}
           onSuccess={() => {
-            fetchSchedules();
+            queryClient.invalidateQueries({ queryKey: ["admin-schedules"] });
             setEditingSchedule(null);
             setFeedbackMsg({
               type: "success",

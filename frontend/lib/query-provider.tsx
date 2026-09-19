@@ -12,7 +12,13 @@ function getQueryClient(): QueryClient {
         queries: {
           staleTime: 10_000, // dữ liệu tươi 10s: chuyển tab không fetch lại vô ích
           gcTime: 5 * 60_000,
-          retry: 1,
+          retry: (failureCount, error) => {
+            // 401 (hết phiên/token) -> không retry, redirect login đã xử lý ở authFetch
+            if (error instanceof Error && /401|Unauthorized/i.test(error.message)) {
+              return false;
+            }
+            return failureCount < 1;
+          },
           refetchOnWindowFocus: false, // trang live đã có polling riêng
         },
         mutations: { retry: 0 },

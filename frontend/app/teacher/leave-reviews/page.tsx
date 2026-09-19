@@ -1,10 +1,13 @@
 "use client";
 
-import React, { useState, useEffect, useMemo } from "react";
+import React, { useState, useMemo } from "react";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { RoleGuard } from "@/components/layout/role-guard";
+import { formatDateTime as formatDateTimeVN } from "@/lib/date";
 import {
   getTeacherLeaveRequests,
   getTeacherClasses,
+  mediaUrl,
   reviewLeaveRequest,
   TeacherLeaveRequest,
   TeacherClass,
@@ -29,10 +32,23 @@ import {
 } from "lucide-react";
 
 export default function TeacherLeaveReviewsPage() {
-  const [requests, setRequests] = useState<TeacherLeaveRequest[]>([]);
-  const [classes, setClasses] = useState<TeacherClass[]>([]);
-  const [loading, setLoading] = useState<boolean>(true);
-  const [error, setError] = useState<string | null>(null);
+  const queryClient = useQueryClient();
+  const leavesQuery = useQuery({
+    queryKey: ["teacher-leaves"],
+    queryFn: () => getTeacherLeaveRequests({ size: 100 }),
+  });
+  const classesQuery = useQuery({
+    queryKey: ["teacher-classes"],
+    queryFn: () => getTeacherClasses().catch(() => [] as TeacherClass[]),
+  });
+  const requests: TeacherLeaveRequest[] = leavesQuery.data?.items ?? [];
+  const classes: TeacherClass[] = classesQuery.data ?? [];
+  const loading = leavesQuery.isPending;
+  const error = leavesQuery.isError
+    ? leavesQuery.error instanceof Error
+      ? leavesQuery.error.message
+      : "Không thể tải danh sách đơn xin nghỉ phép."
+    : null;
 
   // Filters
   const [statusFilter, setStatusFilter] = useState<string>("ALL");
@@ -53,26 +69,10 @@ export default function TeacherLeaveReviewsPage() {
   } | null>(null);
   const [isProofModalOpen, setIsProofModalOpen] = useState<boolean>(false);
 
-  const fetchData = async () => {
-    try {
-      setLoading(true);
-      setError(null);
-      const [leavesPage, classesList] = await Promise.all([
-        getTeacherLeaveRequests({ size: 100 }),
-        getTeacherClasses().catch(() => []),
-      ]);
-      setRequests(leavesPage.items || []);
-      setClasses(classesList);
-    } catch (err: any) {
-      setError(err?.message || "Không thể tải danh sách đơn xin nghỉ phép.");
-    } finally {
-      setLoading(false);
-    }
+  const fetchData = () => {
+    queryClient.invalidateQueries({ queryKey: ["teacher-leaves"] });
+    queryClient.invalidateQueries({ queryKey: ["teacher-classes"] });
   };
-
-  useEffect(() => {
-    fetchData();
-  }, []);
 
   // Stats
   const stats = useMemo(() => {
@@ -112,40 +112,40 @@ export default function TeacherLeaveReviewsPage() {
     });
   }, [requests, statusFilter, classFilter, searchQuery]);
 
-  const handleReview = async (id: number, status: "APPROVED" | "REJECTED") => {
-    try {
-      setActionLoadingId(id);
+  const reviewMutation = useMutation({
+    mutationFn: ({
+      id,
+      status,
+      feedback,
+    }: {
+      id: number;
+      status: "APPROVED" | "REJECTED";
+      feedback: string;
+    }) => reviewLeaveRequest(id, { status, feedback }),
+    onSuccess: () => {
       setActionError(null);
-
-      const feedback = feedbackInputs[id]?.trim() || "";
-      await reviewLeaveRequest(id, { status, feedback });
-
-      // Update local state smoothly
-      setRequests((prev) =>
-        prev.map((item) =>
-          item.id === id
-            ? {
-                ...item,
-                status,
-                teacher_feedback: feedback || null,
-                reviewed_at: new Date().toISOString(),
-              }
-            : item
-        )
-      );
-    } catch (err: any) {
+      queryClient.invalidateQueries({ queryKey: ["teacher-leaves"] });
+    },
+    onError: (err: unknown, variables) => {
       setActionError({
-        id,
-        message: err?.message || "Không thể cập nhật trạng thái đơn.",
+        id: variables.id,
+        message:
+          err instanceof Error ? err.message : "Không thể cập nhật trạng thái đơn.",
       });
-    } finally {
-      setActionLoadingId(null);
-    }
+    },
+    onSettled: () => setActionLoadingId(null),
+  });
+
+  const handleReview = (id: number, status: "APPROVED" | "REJECTED") => {
+    setActionLoadingId(id);
+    setActionError(null);
+    const feedback = feedbackInputs[id]?.trim() || "";
+    reviewMutation.mutate({ id, status, feedback });
   };
 
   const handleOpenProof = (req: TeacherLeaveRequest) => {
     setSelectedProof({
-      url: req.proof_image,
+      url: mediaUrl(req.proof_image),
       studentName: req.student_name || "Sinh viên",
       studentCode: req.student_code || "",
       reason: req.reason,
@@ -156,13 +156,7 @@ export default function TeacherLeaveReviewsPage() {
   const formatDateTime = (dtStr?: string | null) => {
     if (!dtStr) return "--";
     try {
-      const d = new Date(dtStr);
-      const dd = String(d.getDate()).padStart(2, "0");
-      const mm = String(d.getMonth() + 1).padStart(2, "0");
-      const yyyy = d.getFullYear();
-      const hh = String(d.getHours()).padStart(2, "0");
-      const min = String(d.getMinutes()).padStart(2, "0");
-      return `${hh}:${min} - ${dd}/${mm}/${yyyy}`;
+      return formatDateTimeVN(dtStr);
     } catch {
       return dtStr;
     }

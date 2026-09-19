@@ -1,8 +1,13 @@
 "use client";
 
-import React, { useState, useEffect } from "react";
+import React, { useEffect } from "react";
+import { useMutation, useQueryClient } from "@tanstack/react-query";
+import { useForm } from "react-hook-form";
+import { zodResolver } from "@hookform/resolvers/zod";
 import { StudentSchedule, submitLeaveRequest } from "@/lib/api";
-import { X, Upload, FileText, AlertCircle, CheckCircle2, Loader2 } from "lucide-react";
+import { leaveRequestSchema, type LeaveRequestFormValues } from "@/lib/validation";
+import { FileDropzone } from "@/components/ui/file-dropzone";
+import { X, FileText, AlertCircle, CheckCircle2, Loader2 } from "lucide-react";
 
 interface LeaveRequestModalProps {
   isOpen: boolean;
@@ -19,64 +24,72 @@ export function LeaveRequestModal({
   schedules,
   preselectedScheduleId,
 }: LeaveRequestModalProps) {
-  const [scheduleId, setScheduleId] = useState<string>("");
-  const [reason, setReason] = useState<string>("");
-  const [file, setFile] = useState<File | null>(null);
-  const [loading, setLoading] = useState<boolean>(false);
-  const [error, setError] = useState<string | null>(null);
-  const [successMsg, setSuccessMsg] = useState<string | null>(null);
+  const [file, setFile] = React.useState<File | null>(null);
+  const [successMsg, setSuccessMsg] = React.useState<string | null>(null);
+  const queryClient = useQueryClient();
+
+  const {
+    register,
+    handleSubmit,
+    setValue,
+    setError,
+    reset,
+    formState: { errors },
+  } = useForm<LeaveRequestFormValues>({
+    resolver: zodResolver(leaveRequestSchema),
+    defaultValues: { schedule_id: preselectedScheduleId ?? undefined, reason: "" },
+  });
+
+  const submitMutation = useMutation({
+    mutationFn: (formData: FormData) => submitLeaveRequest(formData),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["student-leaves"] });
+      queryClient.invalidateQueries({ queryKey: ["student-schedule"] });
+    },
+  });
+  const isSubmitting = submitMutation.isPending;
 
   useEffect(() => {
     if (isOpen) {
       if (preselectedScheduleId) {
-        setScheduleId(preselectedScheduleId.toString());
-      } else if (schedules.length > 0 && !scheduleId) {
-        setScheduleId(schedules[0].id.toString());
+        setValue("schedule_id", preselectedScheduleId);
+      } else if (schedules.length > 0) {
+        setValue("schedule_id", schedules[0].id);
       }
-      setError(null);
       setSuccessMsg(null);
     }
-  }, [isOpen, preselectedScheduleId, schedules]);
+  }, [isOpen, preselectedScheduleId, schedules, setValue]);
 
   if (!isOpen) return null;
 
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!scheduleId) {
-      setError("Vui lòng chọn buổi học cần xin nghỉ.");
-      return;
-    }
-    if (!reason.trim()) {
-      setError("Vui lòng nhập lý do xin nghỉ phép.");
-      return;
+  const onSubmit = (values: LeaveRequestFormValues) => {
+    const formData = new FormData();
+    formData.append("schedule_id", String(values.schedule_id));
+    formData.append("reason", values.reason);
+    if (file) {
+      formData.append("proof_file", file);
     }
 
-    try {
-      setLoading(true);
-      setError(null);
+    submitMutation.mutate(formData, {
+      onSuccess: () => {
+        setSuccessMsg("Nộp đơn xin nghỉ phép thành công. Giảng viên sẽ xem xét phê duyệt.");
+        reset({ schedule_id: values.schedule_id, reason: "" });
+        setFile(null);
 
-      const formData = new FormData();
-      formData.append("schedule_id", scheduleId);
-      formData.append("reason", reason.trim());
-      if (file) {
-        formData.append("proof_file", file);
-      }
-
-      await submitLeaveRequest(formData);
-
-      setSuccessMsg("Nộp đơn xin nghỉ phép thành công. Giảng viên sẽ xem xét phê duyệt.");
-      setReason("");
-      setFile(null);
-
-      setTimeout(() => {
-        onSuccess?.();
-        onClose();
-      }, 1200);
-    } catch (err: any) {
-      setError(err?.message || "Đã xảy ra lỗi khi gửi đơn xin nghỉ phép.");
-    } finally {
-      setLoading(false);
-    }
+        setTimeout(() => {
+          onSuccess?.();
+          onClose();
+        }, 1200);
+      },
+      onError: (err: unknown) => {
+        setError("root", {
+          message:
+            err instanceof Error
+              ? err.message
+              : "Đã xảy ra lỗi khi gửi đơn xin nghỉ phép.",
+        });
+      },
+    });
   };
 
   return (
@@ -100,7 +113,7 @@ export function LeaveRequestModal({
           <button
             type="button"
             onClick={onClose}
-            disabled={loading}
+            disabled={isSubmitting}
             className="text-slate-400 hover:text-slate-600 rounded p-1 transition-colors"
           >
             <X size={18} />
@@ -108,11 +121,11 @@ export function LeaveRequestModal({
         </div>
 
         {/* Form Body */}
-        <form onSubmit={handleSubmit} className="p-5 space-y-4">
-          {error && (
+        <form onSubmit={handleSubmit(onSubmit)} className="p-5 space-y-4">
+          {errors.root && (
             <div className="flex items-start gap-2.5 p-3 rounded-md bg-rose-50 border border-rose-200 text-rose-700 text-xs">
               <AlertCircle size={16} className="shrink-0 mt-0.5" />
-              <span>{error}</span>
+              <span>{errors.root.message}</span>
             </div>
           )}
 
@@ -129,9 +142,8 @@ export function LeaveRequestModal({
               Chọn buổi học xin nghỉ <span className="text-rose-500">*</span>
             </label>
             <select
-              value={scheduleId}
-              onChange={(e) => setScheduleId(e.target.value)}
-              disabled={loading || schedules.length === 0}
+              {...register("schedule_id", { valueAsNumber: true })}
+              disabled={isSubmitting || schedules.length === 0}
               className="w-full h-9 px-3 rounded-md border border-slate-200 bg-white text-xs text-slate-800 focus:outline-none focus:ring-1 focus:ring-slate-900 focus:border-slate-900 font-mono"
             >
               {schedules.length === 0 ? (
@@ -144,6 +156,9 @@ export function LeaveRequestModal({
                 ))
               )}
             </select>
+            {errors.schedule_id && (
+              <p className="mt-1 text-[11px] text-rose-600">{errors.schedule_id.message}</p>
+            )}
           </div>
 
           {/* Reason Textarea */}
@@ -153,12 +168,14 @@ export function LeaveRequestModal({
             </label>
             <textarea
               rows={3}
-              value={reason}
-              onChange={(e) => setReason(e.target.value)}
+              {...register("reason")}
               placeholder="VD: Em bị sốt cao cần đi khám bệnh tại bệnh viện, em xin phép vắng buổi học..."
-              disabled={loading}
+              disabled={isSubmitting}
               className="w-full px-3 py-2 rounded-md border border-slate-200 bg-white text-xs text-slate-800 placeholder:text-slate-400 focus:outline-none focus:ring-1 focus:ring-slate-900 focus:border-slate-900 resize-none"
             />
+            {errors.reason && (
+              <p className="mt-1 text-[11px] text-rose-600">{errors.reason.message}</p>
+            )}
           </div>
 
           {/* Proof File (Optional) */}
@@ -171,50 +188,7 @@ export function LeaveRequestModal({
                 (Không bắt buộc)
               </span>
             </div>
-            <div className="mt-1 flex justify-center px-4 pt-4 pb-4 border border-dashed border-slate-300 rounded-md bg-slate-50/50 hover:bg-slate-50 transition-colors relative">
-              <div className="space-y-1 text-center">
-                <Upload className="mx-auto h-7 w-7 text-slate-400" />
-                <div className="text-xs text-slate-600">
-                  <label
-                    htmlFor="proof-upload"
-                    className="relative cursor-pointer rounded font-medium text-slate-900 hover:underline"
-                  >
-                    <span>{file ? file.name : "Tải lên tài liệu minh chứng"}</span>
-                    <input
-                      id="proof-upload"
-                      name="proof_file"
-                      type="file"
-                      accept="image/*,application/pdf"
-                      onChange={(e) => {
-                        if (e.target.files && e.target.files[0]) {
-                          setFile(e.target.files[0]);
-                        }
-                      }}
-                      className="sr-only"
-                      disabled={loading}
-                    />
-                  </label>
-                </div>
-                <p className="text-[11px] text-slate-400">
-                  {file
-                    ? `${(file.size / 1024).toFixed(1)} KB`
-                    : "Hỗ trợ ảnh chụp giấy khám bệnh, PDF (tối đa 10MB)"}
-                </p>
-              </div>
-            </div>
-            {file && (
-              <div className="mt-1.5 flex items-center justify-between text-xs text-slate-600 bg-slate-100 px-2.5 py-1 rounded">
-                <span className="truncate font-mono">{file.name}</span>
-                <button
-                  type="button"
-                  onClick={() => setFile(null)}
-                  disabled={loading}
-                  className="text-slate-400 hover:text-rose-600 ml-2"
-                >
-                  <X size={14} />
-                </button>
-              </div>
-            )}
+            <FileDropzone value={file} onChange={setFile} />
           </div>
 
           {/* Footer Actions */}
@@ -222,18 +196,18 @@ export function LeaveRequestModal({
             <button
               type="button"
               onClick={onClose}
-              disabled={loading}
+              disabled={isSubmitting}
               className="h-8 px-3 rounded-md text-xs font-medium text-slate-600 hover:bg-slate-100 transition-colors"
             >
               Hủy bỏ
             </button>
             <button
               type="submit"
-              disabled={loading || schedules.length === 0}
+              disabled={isSubmitting || schedules.length === 0}
               className="h-8 px-4 rounded-md text-xs font-medium bg-slate-900 text-white hover:bg-slate-800 disabled:opacity-50 disabled:pointer-events-none transition-colors inline-flex items-center gap-1.5"
             >
-              {loading && <Loader2 size={13} className="animate-spin" />}
-              <span>{loading ? "Đang gửi đơn..." : "Gửi đơn nghỉ phép"}</span>
+              {isSubmitting && <Loader2 size={13} className="animate-spin" />}
+              <span>{isSubmitting ? "Đang gửi đơn..." : "Gửi đơn nghỉ phép"}</span>
             </button>
           </div>
         </form>

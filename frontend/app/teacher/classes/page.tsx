@@ -1,6 +1,7 @@
 "use client";
 
-import React, { useState, useEffect, useMemo } from "react";
+import React, { useState, useMemo } from "react";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import Link from "next/link";
 import { toast } from "sonner";
 import { RoleGuard } from "@/components/layout/role-guard";
@@ -27,31 +28,26 @@ import {
 } from "lucide-react";
 
 export default function TeacherClassesPage() {
-  const [classes, setClasses] = useState<TeacherClass[]>([]);
-  const [loading, setLoading] = useState<boolean>(true);
-  const [error, setError] = useState<string | null>(null);
+  const queryClient = useQueryClient();
+  const classesQuery = useQuery({
+    queryKey: ["teacher-classes"],
+    queryFn: getTeacherClasses,
+  });
+  const classes: TeacherClass[] = classesQuery.data ?? [];
+  const loading = classesQuery.isPending;
+  const error = classesQuery.isError
+    ? classesQuery.error instanceof Error
+      ? classesQuery.error.message
+      : "Không thể tải danh sách lớp học phần."
+    : null;
 
   const [searchQuery, setSearchQuery] = useState<string>("");
   const [selectedSemester, setSelectedSemester] = useState<string>("ALL");
   const [viewMode, setViewMode] = useState<"grid" | "table">("grid");
   const [downloadingId, setDownloadingId] = useState<number | null>(null);
 
-  const fetchClasses = async () => {
-    try {
-      setLoading(true);
-      setError(null);
-      const data = await getTeacherClasses();
-      setClasses(data);
-    } catch (err: any) {
-      setError(err?.message || "Không thể tải danh sách lớp học phần.");
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  useEffect(() => {
-    fetchClasses();
-  }, []);
+  const fetchClasses = () =>
+    queryClient.invalidateQueries({ queryKey: ["teacher-classes"] });
 
   // Distinct semesters for filter
   const semesters = useMemo(() => {

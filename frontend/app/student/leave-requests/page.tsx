@@ -1,10 +1,13 @@
 "use client";
 
-import React, { useState, useEffect, useMemo } from "react";
+import React, { useState, useMemo } from "react";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { RoleGuard } from "@/components/layout/role-guard";
+import { formatDateTime as formatDateTimeVN } from "@/lib/date";
 import {
   getStudentLeaveRequests,
   getStudentSchedule,
+  mediaUrl,
   StudentLeaveRequest,
   StudentSchedule,
 } from "@/lib/api";
@@ -24,34 +27,31 @@ import {
 } from "lucide-react";
 
 export default function StudentLeaveRequestsPage() {
-  const [requests, setRequests] = useState<StudentLeaveRequest[]>([]);
-  const [schedules, setSchedules] = useState<StudentSchedule[]>([]);
-  const [loading, setLoading] = useState<boolean>(true);
-  const [error, setError] = useState<string | null>(null);
+  const queryClient = useQueryClient();
+  const leavesQuery = useQuery({
+    queryKey: ["student-leaves"],
+    queryFn: getStudentLeaveRequests,
+  });
+  const schedulesQuery = useQuery({
+    queryKey: ["student-schedule"],
+    queryFn: () => getStudentSchedule().catch(() => [] as StudentSchedule[]),
+  });
+  const requests: StudentLeaveRequest[] = leavesQuery.data ?? [];
+  const schedules: StudentSchedule[] = schedulesQuery.data ?? [];
+  const loading = leavesQuery.isPending;
+  const error = leavesQuery.isError
+    ? leavesQuery.error instanceof Error
+      ? leavesQuery.error.message
+      : "Không thể tải danh sách đơn xin nghỉ phép."
+    : null;
 
   const [isModalOpen, setIsModalOpen] = useState<boolean>(false);
   const [statusFilter, setStatusFilter] = useState<string>("ALL");
 
-  const fetchData = async () => {
-    try {
-      setLoading(true);
-      setError(null);
-      const [reqData, schedData] = await Promise.all([
-        getStudentLeaveRequests(),
-        getStudentSchedule().catch(() => []),
-      ]);
-      setRequests(reqData);
-      setSchedules(schedData);
-    } catch (err: any) {
-      setError(err?.message || "Không thể tải danh sách đơn xin nghỉ phép.");
-    } finally {
-      setLoading(false);
-    }
+  const fetchData = () => {
+    queryClient.invalidateQueries({ queryKey: ["student-leaves"] });
+    queryClient.invalidateQueries({ queryKey: ["student-schedule"] });
   };
-
-  useEffect(() => {
-    fetchData();
-  }, []);
 
   // Filtered requests
   const filteredRequests = useMemo(() => {
@@ -77,13 +77,7 @@ export default function StudentLeaveRequestsPage() {
   const formatDateTime = (dtStr?: string | null) => {
     if (!dtStr) return "--";
     try {
-      const d = new Date(dtStr);
-      const dd = String(d.getDate()).padStart(2, "0");
-      const mm = String(d.getMonth() + 1).padStart(2, "0");
-      const yyyy = d.getFullYear();
-      const hh = String(d.getHours()).padStart(2, "0");
-      const min = String(d.getMinutes()).padStart(2, "0");
-      return `${hh}:${min} - ${dd}/${mm}/${yyyy}`;
+      return formatDateTimeVN(dtStr);
     } catch {
       return dtStr;
     }
@@ -323,7 +317,7 @@ export default function StudentLeaveRequestsPage() {
                       <td className="px-4 py-3 whitespace-nowrap">
                         {req.proof_image ? (
                           <a
-                            href={req.proof_image}
+                            href={mediaUrl(req.proof_image)}
                             target="_blank"
                             rel="noopener noreferrer"
                             className="inline-flex items-center gap-1 text-[11px] font-medium text-sky-700 hover:text-sky-800 bg-sky-50 hover:bg-sky-100 px-2 py-0.5 rounded border border-sky-200 transition-colors"

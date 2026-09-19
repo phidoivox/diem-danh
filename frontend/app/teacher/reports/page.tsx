@@ -1,6 +1,7 @@
 "use client";
 
-import React, { useState, useEffect, useMemo, Suspense } from "react";
+import React, { useState, useMemo, Suspense, useEffect } from "react";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useSearchParams } from "next/navigation";
 import { toast } from "sonner";
 import { RoleGuard } from "@/components/layout/role-guard";
@@ -32,63 +33,50 @@ import {
 function TeacherReportsContent() {
   const searchParams = useSearchParams();
   const urlClassId = searchParams.get("class_id");
+  const queryClient = useQueryClient();
 
-  const [classes, setClasses] = useState<TeacherClass[]>([]);
   const [selectedClassId, setSelectedClassId] = useState<number | null>(null);
-  const [report, setReport] = useState<ExamBanReport | null>(null);
-
-  const [loadingClasses, setLoadingClasses] = useState<boolean>(true);
-  const [loadingReport, setLoadingReport] = useState<boolean>(false);
   const [downloading, setDownloading] = useState<boolean>(false);
-  const [error, setError] = useState<string | null>(null);
 
   // Table search & filter
   const [searchQuery, setSearchQuery] = useState<string>("");
   const [statusFilter, setStatusFilter] = useState<string>("ALL");
 
-  // Load teacher classes
+  const classesQuery = useQuery({
+    queryKey: ["teacher-classes"],
+    queryFn: getTeacherClasses,
+  });
+  const classes: TeacherClass[] = classesQuery.data ?? [];
+  const loadingClasses = classesQuery.isPending;
+  const classesError = classesQuery.isError
+    ? classesQuery.error instanceof Error
+      ? classesQuery.error.message
+      : "Không thể tải danh sách lớp học phần."
+    : null;
+
+  const reportQuery = useQuery({
+    queryKey: ["teacher-report", selectedClassId],
+    queryFn: () => getTeacherExamBanReport(selectedClassId!),
+    enabled: selectedClassId !== null,
+  });
+  const report: ExamBanReport | null = reportQuery.data ?? null;
+  const loadingReport = reportQuery.isPending || reportQuery.isFetching;
+  const reportError = reportQuery.isError
+    ? reportQuery.error instanceof Error
+      ? reportQuery.error.message
+      : "Không thể tải dữ liệu báo cáo cấm thi."
+    : null;
+  const error = classesError ?? reportError;
+
+  // Mặc định chọn lớp theo ?class_id= hoặc lớp đầu tiên khi classes về.
   useEffect(() => {
-    async function loadClasses() {
-      try {
-        setLoadingClasses(true);
-        setError(null);
-        const data = await getTeacherClasses();
-        setClasses(data);
-
-        if (data.length > 0) {
-          const matched = urlClassId
-            ? data.find((c) => c.id === Number(urlClassId))
-            : null;
-          setSelectedClassId(matched ? matched.id : data[0].id);
-        }
-      } catch (err: any) {
-        setError(err?.message || "Không thể tải danh sách lớp học phần.");
-      } finally {
-        setLoadingClasses(false);
-      }
+    if (classes.length > 0 && selectedClassId === null) {
+      const matched = urlClassId
+        ? classes.find((c) => c.id === Number(urlClassId))
+        : null;
+      setSelectedClassId(matched ? matched.id : classes[0].id);
     }
-    loadClasses();
-  }, [urlClassId]);
-
-  // Load report when selectedClassId changes
-  useEffect(() => {
-    if (!selectedClassId) return;
-
-    async function loadReport() {
-      try {
-        setLoadingReport(true);
-        setError(null);
-        const rep = await getTeacherExamBanReport(selectedClassId!);
-        setReport(rep);
-      } catch (err: any) {
-        setError(err?.message || "Không thể tải dữ liệu báo cáo cấm thi.");
-        setReport(null);
-      } finally {
-        setLoadingReport(false);
-      }
-    }
-    loadReport();
-  }, [selectedClassId]);
+  }, [classes, selectedClassId, urlClassId]);
 
   // Selected Class details
   const currentClass = useMemo(() => {
@@ -277,10 +265,11 @@ function TeacherReportsContent() {
           <span>{error}</span>
           <button
             onClick={() => {
+              queryClient.invalidateQueries({ queryKey: ["teacher-classes"] });
               if (selectedClassId) {
-                const cur = selectedClassId;
-                setSelectedClassId(null);
-                setTimeout(() => setSelectedClassId(cur), 50);
+                queryClient.invalidateQueries({
+                  queryKey: ["teacher-report", selectedClassId],
+                });
               }
             }}
             className="text-xs font-semibold underline hover:no-underline ml-4"

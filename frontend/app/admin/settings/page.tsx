@@ -1,7 +1,9 @@
 "use client";
 
 import React, { useState, useEffect } from "react";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { RoleGuard } from "@/components/layout/role-guard";
+import { todayVN } from "@/lib/date";
 import {
   getAdminSettings,
   updateAdminSettings,
@@ -25,7 +27,11 @@ import {
 } from "lucide-react";
 
 export default function AdminSettingsPage() {
-  // Settings state
+  const queryClient = useQueryClient();
+  const settingsQuery = useQuery({
+    queryKey: ["admin-settings"],
+    queryFn: getAdminSettings,
+  });
   const [pointFullAttendance, setPointFullAttendance] = useState("2");
   const [pointLate, setPointLate] = useState("-1");
   const [pointHalfAbsence, setPointHalfAbsence] = useState("-2");
@@ -37,55 +43,81 @@ export default function AdminSettingsPage() {
   const [maxAbsencePercentExamBan, setMaxAbsencePercentExamBan] = useState("20");
   const [warningAbsencePercent, setWarningAbsencePercent] = useState("15");
 
-  const [isLoading, setIsLoading] = useState(true);
-  const [isSaving, setIsSaving] = useState(false);
   const [saveSuccess, setSaveSuccess] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
-  // Nightly Evaluation state
-  const [targetDate, setTargetDate] = useState(() => {
-    return new Date().toISOString().split("T")[0];
-  });
-  const [isEvaluating, setIsEvaluating] = useState(false);
+  // Nightly Evaluation state (ngày VN, không lệch UTC như toISOString).
+  const [targetDate, setTargetDate] = useState(() => todayVN());
   const [evalResult, setEvalResult] = useState<EvaluationResult | null>(null);
   const [evalError, setEvalError] = useState<string | null>(null);
 
-  // Load existing settings
-  const fetchSettings = async () => {
-    setIsLoading(true);
-    setErrorMessage(null);
-    try {
-      const data = await getAdminSettings();
-      const map = data.settings || {};
+  const isLoading = settingsQuery.isPending;
+  const queryError = settingsQuery.isError
+    ? settingsQuery.error instanceof Error
+      ? settingsQuery.error.message
+      : "Không thể tải cấu hình tham số hệ thống"
+    : null;
 
-      if (map["POINT_FULL_ATTENDANCE"]) setPointFullAttendance(map["POINT_FULL_ATTENDANCE"]);
-      if (map["POINT_LATE"]) setPointLate(map["POINT_LATE"]);
-      if (map["POINT_HALF_ABSENCE"]) setPointHalfAbsence(map["POINT_HALF_ABSENCE"]);
-      if (map["POINT_ABSENCE_WITHOUT_LEAVE"])
-        setPointAbsenceWithoutLeave(map["POINT_ABSENCE_WITHOUT_LEAVE"]);
-      if (map["POINT_UNIFORM_VIOLATION"]) setPointUniformViolation(map["POINT_UNIFORM_VIOLATION"]);
+  // Nạp settings từ cache query vào form cục bộ khi dữ liệu về.
+  useEffect(() => {
+    const map = settingsQuery.data?.settings || {};
+    if (!settingsQuery.data) return;
+    if (map["POINT_FULL_ATTENDANCE"]) setPointFullAttendance(map["POINT_FULL_ATTENDANCE"]);
+    if (map["POINT_LATE"]) setPointLate(map["POINT_LATE"]);
+    if (map["POINT_HALF_ABSENCE"]) setPointHalfAbsence(map["POINT_HALF_ABSENCE"]);
+    if (map["POINT_ABSENCE_WITHOUT_LEAVE"])
+      setPointAbsenceWithoutLeave(map["POINT_ABSENCE_WITHOUT_LEAVE"]);
+    if (map["POINT_UNIFORM_VIOLATION"]) setPointUniformViolation(map["POINT_UNIFORM_VIOLATION"]);
 
-      if (map["LATE_TOLERANCE_MINUTES"]) setLateToleranceMinutes(map["LATE_TOLERANCE_MINUTES"]);
-      if (map["REQUIRE_CHECKOUT"])
-        setRequireCheckout(map["REQUIRE_CHECKOUT"].toLowerCase() === "true");
-      if (map["MAX_ABSENCE_PERCENT_EXAM_BAN"])
-        setMaxAbsencePercentExamBan(map["MAX_ABSENCE_PERCENT_EXAM_BAN"]);
-      if (map["WARNING_ABSENCE_PERCENT"]) setWarningAbsencePercent(map["WARNING_ABSENCE_PERCENT"]);
-    } catch (err: any) {
-      setErrorMessage(err.message || "Không thể tải cấu hình tham số hệ thống");
-    } finally {
-      setIsLoading(false);
-    }
-  };
+    if (map["LATE_TOLERANCE_MINUTES"]) setLateToleranceMinutes(map["LATE_TOLERANCE_MINUTES"]);
+    if (map["REQUIRE_CHECKOUT"])
+      setRequireCheckout(map["REQUIRE_CHECKOUT"].toLowerCase() === "true");
+    if (map["MAX_ABSENCE_PERCENT_EXAM_BAN"])
+      setMaxAbsencePercentExamBan(map["MAX_ABSENCE_PERCENT_EXAM_BAN"]);
+    if (map["WARNING_ABSENCE_PERCENT"]) setWarningAbsencePercent(map["WARNING_ABSENCE_PERCENT"]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [settingsQuery.data]);
 
   useEffect(() => {
-    fetchSettings();
-  }, []);
+    if (queryError) setErrorMessage(queryError);
+    else setErrorMessage(null);
+  }, [queryError]);
+
+  const fetchSettings = () =>
+    queryClient.invalidateQueries({ queryKey: ["admin-settings"] });
+
+  const saveMutation = useMutation({
+    mutationFn: (payload: Record<string, string>) => updateAdminSettings(payload),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["admin-settings"] });
+      setSaveSuccess(true);
+      setTimeout(() => setSaveSuccess(false), 3000);
+    },
+    onError: (err: unknown) => {
+      setErrorMessage(
+        err instanceof Error ? err.message : "Không thể lưu cấu hình tham số"
+      );
+    },
+  });
+  const isSaving = saveMutation.isPending;
+
+  const evalMutation = useMutation({
+    mutationFn: (date?: string) => triggerNightlyEvaluation(date),
+    onSuccess: (res) => {
+      setEvalError(null);
+      setEvalResult(res);
+    },
+    onError: (err: unknown) => {
+      setEvalError(
+        err instanceof Error ? err.message : "Lỗi khi kích hoạt tính điểm chuyên cần"
+      );
+    },
+  });
+  const isEvaluating = evalMutation.isPending;
 
   // Save Settings
-  const handleSaveSettings = async (e: React.FormEvent) => {
+  const handleSaveSettings = (e: React.FormEvent) => {
     e.preventDefault();
-    setIsSaving(true);
     setErrorMessage(null);
     setSaveSuccess(false);
 
@@ -101,31 +133,14 @@ export default function AdminSettingsPage() {
       WARNING_ABSENCE_PERCENT: String(warningAbsencePercent),
     };
 
-    try {
-      await updateAdminSettings(payload);
-      setSaveSuccess(true);
-      setTimeout(() => setSaveSuccess(false), 3000);
-    } catch (err: any) {
-      setErrorMessage(err.message || "Không thể lưu cấu hình tham số");
-    } finally {
-      setIsSaving(false);
-    }
+    saveMutation.mutate(payload);
   };
 
   // Run Nightly Evaluation Now
-  const handleRunEvaluationNow = async () => {
-    setIsEvaluating(true);
+  const handleRunEvaluationNow = () => {
     setEvalError(null);
     setEvalResult(null);
-
-    try {
-      const res = await triggerNightlyEvaluation(targetDate || undefined);
-      setEvalResult(res);
-    } catch (err: any) {
-      setEvalError(err.message || "Lỗi khi kích hoạt tính điểm chuyên cần");
-    } finally {
-      setIsEvaluating(false);
-    }
+    evalMutation.mutate(targetDate || undefined);
   };
 
   return (
@@ -302,7 +317,7 @@ export default function AdminSettingsPage() {
                 <div className="p-3.5 rounded-md border border-slate-200 bg-slate-50/40 space-y-1.5 md:col-span-2">
                   <div className="flex items-center justify-between">
                     <label className="text-xs font-semibold text-slate-800">
-                      Vi phạm quy định đồng phục (quét AI Kiosk)
+                      Vi phạm quy định đồng phục
                     </label>
                     <span className="text-[11px] font-mono text-rose-600 font-semibold">- điểm</span>
                   </div>

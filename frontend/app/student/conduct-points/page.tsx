@@ -1,7 +1,9 @@
 "use client";
 
-import React, { useState, useEffect, useMemo } from "react";
+import React, { useState, useMemo } from "react";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { RoleGuard } from "@/components/layout/role-guard";
+import { formatDateTime as formatDateTimeVN } from "@/lib/date";
 import { getStudentConductLedger, StudentConductLedger } from "@/lib/api";
 import {
   Award,
@@ -17,30 +19,25 @@ import {
 } from "lucide-react";
 
 export default function StudentConductPointsPage() {
-  const [ledger, setLedger] = useState<StudentConductLedger>({
+  const queryClient = useQueryClient();
+  const ledgerQuery = useQuery({
+    queryKey: ["conduct-ledger"],
+    queryFn: getStudentConductLedger,
+  });
+  const ledger: StudentConductLedger = ledgerQuery.data ?? {
     total_point: 100,
     items: [],
-  });
-  const [loading, setLoading] = useState<boolean>(true);
-  const [error, setError] = useState<string | null>(null);
+  };
+  const loading = ledgerQuery.isPending;
+  const error = ledgerQuery.isError
+    ? ledgerQuery.error instanceof Error
+      ? ledgerQuery.error.message
+      : "Không thể tải sổ cái điểm rèn luyện."
+    : null;
   const [reasonFilter, setReasonFilter] = useState<string>("ALL");
 
-  const fetchLedger = async () => {
-    try {
-      setLoading(true);
-      setError(null);
-      const data = await getStudentConductLedger();
-      setLedger(data);
-    } catch (err: any) {
-      setError(err?.message || "Không thể tải sổ cái điểm rèn luyện.");
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  useEffect(() => {
-    fetchLedger();
-  }, []);
+  const fetchLedger = () =>
+    queryClient.invalidateQueries({ queryKey: ["conduct-ledger"] });
 
   const totalPoint = ledger.total_point;
 
@@ -104,13 +101,7 @@ export default function StudentConductPointsPage() {
 
   const formatTimestamp = (ts: string) => {
     try {
-      const d = new Date(ts);
-      const dd = String(d.getDate()).padStart(2, "0");
-      const mm = String(d.getMonth() + 1).padStart(2, "0");
-      const yyyy = d.getFullYear();
-      const hh = String(d.getHours()).padStart(2, "0");
-      const min = String(d.getMinutes()).padStart(2, "0");
-      return `${hh}:${min} - ${dd}/${mm}/${yyyy}`;
+      return formatDateTimeVN(ts);
     } catch {
       return ts;
     }
