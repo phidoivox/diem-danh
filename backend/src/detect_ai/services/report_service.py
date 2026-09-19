@@ -1,11 +1,13 @@
 from __future__ import annotations
 
 import io
+from collections import Counter
 from datetime import date
 from typing import Any, Dict, List, Optional
 from openpyxl import Workbook
-from openpyxl.styles import Alignment, Border, Font, PatternFill, Side
+from openpyxl.styles import Alignment, Border, Font, NamedStyle, PatternFill, Side
 from openpyxl.utils import get_column_letter
+from openpyxl.worksheet.worksheet import Worksheet
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
@@ -13,16 +15,123 @@ from sqlalchemy.orm import selectinload
 from ..models.academic import Class, ClassStudent, Schedule
 from ..models.attendance_v2 import Attendance, AttendanceStatus
 from ..models.user import User
+from .settings_repo import load_exam_ban_thresholds
+
+# Vắng quy đổi: V = N_vắng + 0.5 × N_vắng_nửa_buổi (EXCUSED không tính).
+HALF_ABSENT_WEIGHT = 0.5
+
+EXAM_BAN_HEADERS = [
+    "STT",
+    "Mã Sinh Viên",
+    "Họ và Tên",
+    "Lớp Sinh Hoạt",
+    "Môn Học",
+    "Số Buổi Vắng",
+    "Số Buổi Vắng Nửa Buổi",
+    "Tỷ Lệ Vắng Cả Kỳ (%)",
+    "Trạng Thái",
+]
+
+NAVY_FILL = PatternFill(start_color="1E3A8A", end_color="1E3A8A", fill_type="solid")
+WHITE_FONT_BOLD = Font(name="Calibri", size=11, bold=True, color="FFFFFF")
+TITLE_FONT = Font(name="Calibri", size=16, bold=True, color="1E3A8A")
+SUBTITLE_FONT = Font(name="Calibri", size=11, italic=True, color="4B5563")
+BANNED_FILL = PatternFill(start_color="FEE2E2", end_color="FEE2E2", fill_type="solid")
+BANNED_FONT = Font(name="Calibri", size=11, bold=True, color="991B1B")
+WARNING_FILL = PatternFill(start_color="FEF3C7", end_color="FEF3C7", fill_type="solid")
+WARNING_FONT = Font(name="Calibri", size=11, bold=True, color="92400E")
+REGULAR_FONT = Font(name="Calibri", size=11)
+_THIN_SIDE = Side(border_style="thin", color="D1D5DB")
+CELL_BORDER = Border(left=_THIN_SIDE, right=_THIN_SIDE, top=_THIN_SIDE, bottom=_THIN_SIDE)
+CENTER = Alignment(horizontal="center", vertical="center")
+CENTER_WRAP = Alignment(horizontal="center", vertical="center", wrap_text=True)
+LEFT = Alignment(horizontal="left", vertical="center")
+
+
+def _ensure_styles(wb: Workbook) -> None:
+    """Đăng ký NamedStyle dùng chung cho báo cáo cấm thi (idempotent).
+
+    Kiểm tra `wb.named_styles` trước khi thêm để không trùng tên khi hàm
+    generate được gọi nhiều lần trên cùng workbook.
+    """
+    existing = {getattr(s, "name", s) for s in wb.named_styles}
+
+    def _add(name: str, **kwargs: Any) -> None:
+        if name not in existing:
+            wb.add_named_style(NamedStyle(name=name, **kwargs))
+            existing.add(name)
+
+    _add("exam_title", font=TITLE_FONT, alignment=CENTER)
+    _add("exam_subtitle", font=SUBTITLE_FONT, alignment=CENTER)
+    _add(
+        "exam_header",
+        fill=NAVY_FILL,
+        font=WHITE_FONT_BOLD,
+        alignment=CENTER_WRAP,
+        border=CELL_BORDER,
+    )
+    _add("exam_data", font=REGULAR_FONT, alignment=CENTER, border=CELL_BORDER)
+    _add("exam_data_left", font=REGULAR_FONT, alignment=LEFT, border=CELL_BORDER)
+    _add(
+        "exam_banned",
+        fill=BANNED_FILL,
+        font=REGULAR_FONT,
+        alignment=CENTER,
+        border=CELL_BORDER,
+    )
+    _add(
+        "exam_banned_left",
+        fill=BANNED_FILL,
+        font=REGULAR_FONT,
+        alignment=LEFT,
+        border=CELL_BORDER,
+    )
+    _add(
+        "exam_banned_status",
+        fill=BANNED_FILL,
+        font=BANNED_FONT,
+        alignment=CENTER,
+        border=CELL_BORDER,
+    )
+    _add(
+        "exam_warning",
+        fill=WARNING_FILL,
+        font=REGULAR_FONT,
+        alignment=CENTER,
+        border=CELL_BORDER,
+    )
+    _add(
+        "exam_warning_left",
+        fill=WARNING_FILL,
+        font=REGULAR_FONT,
+        alignment=LEFT,
+        border=CELL_BORDER,
+    )
+    _add(
+        "exam_warning_status",
+        fill=WARNING_FILL,
+        font=WARNING_FONT,
+        alignment=CENTER,
+        border=CELL_BORDER,
+    )
 
 
 async def calculate_class_exam_ban(
     session: AsyncSession,
     class_id: int,
     reference_date: Optional[date] = None,
+    thresholds: Optional[tuple[float, float]] = None,
 ) -> Optional[Dict[str, Any]]:
-    """Calculate exam-ban metrics and status for all students in a specific class."""
+    """Calculate exam-ban metrics and status for all students in a specific class.
+
+    `thresholds` = (cảnh báo %, cấm thi %) đọc từ system_settings. Truyền vào khi gọi
+    hàng loạt để khỏi truy vấn cấu hình lặp lại cho từng lớp.
+    """
     if reference_date is None:
         reference_date = date.today()
+    if thresholds is None:
+        thresholds = await load_exam_ban_thresholds(session)
+    warning_percent, ban_percent = thresholds
 
     # 1. Fetch class details
     stmt_class = (
@@ -69,40 +178,26 @@ async def calculate_class_exam_ban(
 
     att_map = {(a.schedule_id, a.student_id): a for a in attendances}
 
-    # 5. Compute metrics for each student
+    # 5. Compute metrics for each student (Counter thay if/elif từng buổi)
     student_results = []
     for st in students:
-        n_absent = 0
-        n_half_absent = 0
-        n_late = 0
-        n_present = 0
-        n_excused = 0
-
+        counts: Counter = Counter()
         for sched in schedules:
             att = att_map.get((sched.id, st.id))
-            if att:
-                if att.status == AttendanceStatus.ABSENT:
-                    n_absent += 1
-                elif att.status == AttendanceStatus.HALF_ABSENT:
-                    n_half_absent += 1
-                elif att.status == AttendanceStatus.LATE:
-                    n_late += 1
-                elif att.status == AttendanceStatus.PRESENT:
-                    n_present += 1
-                elif att.status == AttendanceStatus.EXCUSED:
-                    n_excused += 1
-            else:
-                # If no attendance record exists for a past schedule, student was absent
-                n_absent += 1
+            # Buổi quá khứ chưa có bản ghi = vắng không phép.
+            counts[att.status if att else AttendanceStatus.ABSENT] += 1
+
+        n_absent = counts[AttendanceStatus.ABSENT]
+        n_half_absent = counts[AttendanceStatus.HALF_ABSENT]
 
         # V = N_ABSENT + 0.5 * N_HALF_ABSENT (EXCUSED is NOT counted)
-        v = n_absent + 0.5 * n_half_absent
+        v = n_absent + HALF_ABSENT_WEIGHT * n_half_absent
 
         rate_cumulative = round((v / max(1, elapsed_sessions)) * 100.0, 2)
         rate_semester = round((v / max(1, total_sessions)) * 100.0, 2)
 
-        is_warning = (rate_cumulative >= 15.0)
-        is_banned = (rate_semester >= 20.0)
+        is_warning = (rate_cumulative >= warning_percent)
+        is_banned = (rate_semester >= ban_percent)
 
         if is_banned:
             status_label = "BỊ CẤM THI"
@@ -122,9 +217,9 @@ async def calculate_class_exam_ban(
             "class_code": class_obj.class_code,
             "absent_count": n_absent,
             "half_absent_count": n_half_absent,
-            "late_count": n_late,
-            "present_count": n_present,
-            "excused_count": n_excused,
+            "late_count": counts[AttendanceStatus.LATE],
+            "present_count": counts[AttendanceStatus.PRESENT],
+            "excused_count": counts[AttendanceStatus.EXCUSED],
             "converted_absent": v,
             "rate_cumulative": rate_cumulative,
             "rate_semester": rate_semester,
@@ -141,6 +236,11 @@ async def calculate_class_exam_ban(
         "teacher_name": class_obj.teacher.full_name if class_obj.teacher else "",
         "total_sessions": total_sessions,
         "elapsed_sessions": elapsed_sessions,
+        # Ngưỡng đang áp dụng để frontend hiển thị/tô màu khớp với backend.
+        # (Admin đổi WARNING_ABSENCE_PERCENT / MAX_ABSENCE_PERCENT_EXAM_BAN ở
+        # /admin/settings thì badge is_warning/is_banned và nhãn ngưỡng đổi cùng nhau.)
+        "warning_percent": warning_percent,
+        "ban_percent": ban_percent,
         "students": student_results,
     }
 
@@ -153,13 +253,84 @@ async def calculate_all_classes_exam_ban(
     stmt = select(Class).order_by(Class.class_code)
     classes = (await session.execute(stmt)).scalars().all()
 
+    # Đọc cấu hình 1 lần cho cả trường thay vì mỗi lớp 1 lần
+    thresholds = await load_exam_ban_thresholds(session)
+
     all_rows: List[Dict[str, Any]] = []
     for c in classes:
-        res = await calculate_class_exam_ban(session, c.id, reference_date=reference_date)
+        res = await calculate_class_exam_ban(
+            session, c.id, reference_date=reference_date, thresholds=thresholds
+        )
         if res and res.get("students"):
             all_rows.extend(res["students"])
 
     return all_rows
+
+
+def _write_title_block(ws: Worksheet, title: str, subtitle: str) -> None:
+    ws.merge_cells("A1:I1")
+    title_cell = ws["A1"]
+    title_cell.value = title.upper()
+    title_cell.style = "exam_title"
+    ws.row_dimensions[1].height = 35
+
+    ws.merge_cells("A2:I2")
+    subtitle_cell = ws["A2"]
+    subtitle_cell.value = subtitle or f"Ngày xuất báo cáo: {date.today().strftime('%d/%m/%Y')}"
+    subtitle_cell.style = "exam_subtitle"
+    ws.row_dimensions[2].height = 20
+    ws.row_dimensions[3].height = 10  # dòng phân cách
+
+
+def _write_header_row(ws: Worksheet, row: int = 4) -> None:
+    ws.row_dimensions[row].height = 28
+    for col_idx, h in enumerate(EXAM_BAN_HEADERS, start=1):
+        cell = ws.cell(row=row, column=col_idx, value=h)
+        cell.style = "exam_header"
+
+
+def _write_data_row(ws: Worksheet, row_idx: int, stt: int, item: Dict[str, Any]) -> None:
+    rate_semester = item.get("rate_semester", 0.0)
+    status_label = item.get("status_label", "ĐỦ ĐIỀU KIỆN")
+    row_values = [
+        stt,
+        item.get("student_code", ""),
+        item.get("full_name", ""),
+        item.get("class_name", ""),
+        item.get("course_name", ""),
+        item.get("absent_count", 0),
+        item.get("half_absent_count", 0),
+        f"{rate_semester:.1f}%",
+        status_label,
+    ]
+    ws.row_dimensions[row_idx].height = 22
+    is_banned = status_label == "BỊ CẤM THI" or item.get("is_banned", False)
+    is_warning = status_label == "CẢNH BÁO" or item.get("is_warning", False)
+    for col_idx, val in enumerate(row_values, start=1):
+        cell = ws.cell(row=row_idx, column=col_idx, value=val)
+        centered = col_idx in (1, 2, 6, 7, 8, 9)
+        if is_banned:
+            if col_idx == 9:
+                cell.style = "exam_banned_status"
+            else:
+                cell.style = "exam_banned" if centered else "exam_banned_left"
+        elif is_warning:
+            if col_idx == 9:
+                cell.style = "exam_warning_status"
+            else:
+                cell.style = "exam_warning" if centered else "exam_warning_left"
+        else:
+            cell.style = "exam_data" if centered else "exam_data_left"
+
+
+def _autofit_columns(ws: Worksheet, skip_rows: tuple[int, ...] = (1, 2, 3)) -> None:
+    for col in ws.columns:
+        col_letter = get_column_letter(col[0].column)
+        max_len = max(
+            (len(str(c.value or "")) for c in col if c.row not in skip_rows),
+            default=0,
+        )
+        ws.column_dimensions[col_letter].width = max(max_len + 5, 12)
 
 
 def generate_excel_exam_ban(
@@ -169,132 +340,15 @@ def generate_excel_exam_ban(
 ) -> bytes:
     """Generate professional Excel (.xlsx) file for exam-ban report using openpyxl."""
     wb = Workbook()
+    _ensure_styles(wb)
     ws = wb.active
     ws.title = "Danh sách cấm thi"
 
-    # Define color styles
-    navy_fill = PatternFill(start_color="1E3A8A", end_color="1E3A8A", fill_type="solid")
-    white_font_bold = Font(name="Calibri", size=11, bold=True, color="FFFFFF")
-    title_font = Font(name="Calibri", size=16, bold=True, color="1E3A8A")
-    subtitle_font = Font(name="Calibri", size=11, italic=True, color="4B5563")
-
-    banned_fill = PatternFill(start_color="FEE2E2", end_color="FEE2E2", fill_type="solid")
-    banned_font = Font(name="Calibri", size=11, bold=True, color="991B1B")
-
-    warning_fill = PatternFill(start_color="FEF3C7", end_color="FEF3C7", fill_type="solid")
-    warning_font = Font(name="Calibri", size=11, bold=True, color="92400E")
-
-    regular_font = Font(name="Calibri", size=11)
-
-    thin_border_side = Side(border_style="thin", color="D1D5DB")
-    cell_border = Border(
-        left=thin_border_side,
-        right=thin_border_side,
-        top=thin_border_side,
-        bottom=thin_border_side,
-    )
-
-    # 1. Title row
-    ws.merge_cells("A1:I1")
-    title_cell = ws["A1"]
-    title_cell.value = title.upper()
-    title_cell.font = title_font
-    title_cell.alignment = Alignment(horizontal="center", vertical="center")
-    ws.row_dimensions[1].height = 35
-
-    # 2. Subtitle row
-    ws.merge_cells("A2:I2")
-    subtitle_cell = ws["A2"]
-    subtitle_cell.value = subtitle or f"Ngày xuất báo cáo: {date.today().strftime('%d/%m/%Y')}"
-    subtitle_cell.font = subtitle_font
-    subtitle_cell.alignment = Alignment(horizontal="center", vertical="center")
-    ws.row_dimensions[2].height = 20
-
-    # Row 3 is empty separator
-    ws.row_dimensions[3].height = 10
-
-    # 3. Header row (Row 4)
-    headers = [
-        "STT",
-        "Mã Sinh Viên",
-        "Họ và Tên",
-        "Lớp Sinh Hoạt",
-        "Môn Học",
-        "Số Buổi Vắng",
-        "Số Buổi Vắng Nửa Buổi",
-        "Tỷ Lệ Vắng Cả Kỳ (%)",
-        "Trạng Thái",
-    ]
-    ws.row_dimensions[4].height = 28
-    for col_idx, h in enumerate(headers, start=1):
-        cell = ws.cell(row=4, column=col_idx, value=h)
-        cell.fill = navy_fill
-        cell.font = white_font_bold
-        cell.alignment = Alignment(horizontal="center", vertical="center", wrap_text=True)
-        cell.border = cell_border
-
-    # 4. Data rows (Row 5+)
+    _write_title_block(ws, title, subtitle)
+    _write_header_row(ws)
     for row_idx, item in enumerate(data, start=5):
-        stt = row_idx - 4
-        student_code = item.get("student_code", "")
-        full_name = item.get("full_name", "")
-        class_name = item.get("class_name", "")
-        course_name = item.get("course_name", "")
-        absent_count = item.get("absent_count", 0)
-        half_absent_count = item.get("half_absent_count", 0)
-        rate_semester = item.get("rate_semester", 0.0)
-        status_label = item.get("status_label", "ĐỦ ĐIỀU KIỆN")
-
-        row_values = [
-            stt,
-            student_code,
-            full_name,
-            class_name,
-            course_name,
-            absent_count,
-            half_absent_count,
-            f"{rate_semester:.1f}%",
-            status_label,
-        ]
-
-        ws.row_dimensions[row_idx].height = 22
-
-        is_banned = (status_label == "BỊ CẤM THI" or item.get("is_banned", False))
-        is_warning = (status_label == "CẢNH BÁO" or item.get("is_warning", False))
-
-        for col_idx, val in enumerate(row_values, start=1):
-            cell = ws.cell(row=row_idx, column=col_idx, value=val)
-            cell.border = cell_border
-            cell.font = regular_font
-
-            # Text alignment
-            if col_idx in [1, 2, 6, 7, 8, 9]:
-                cell.alignment = Alignment(horizontal="center", vertical="center")
-            else:
-                cell.alignment = Alignment(horizontal="left", vertical="center")
-
-            # Apply row / status highlights
-            if is_banned:
-                cell.fill = banned_fill
-                if col_idx == 9:
-                    cell.font = banned_font
-            elif is_warning:
-                cell.fill = warning_fill
-                if col_idx == 9:
-                    cell.font = warning_font
-
-    # Auto adjust column widths
-    for col in ws.columns:
-        max_len = 0
-        col_letter = get_column_letter(col[0].column)
-        for cell in col:
-            # Skip merged title rows when calculating widths
-            if cell.row in [1, 2, 3]:
-                continue
-            val_str = str(cell.value or "")
-            if len(val_str) > max_len:
-                max_len = len(val_str)
-        ws.column_dimensions[col_letter].width = max(max_len + 5, 12)
+        _write_data_row(ws, row_idx, row_idx - 4, item)
+    _autofit_columns(ws)
 
     output = io.BytesIO()
     wb.save(output)
