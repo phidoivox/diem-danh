@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import date, datetime, time, timezone
+from datetime import date, datetime, time
 from typing import List, Optional
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, UploadFile, status
 from pydantic import BaseModel, ConfigDict, Field
@@ -10,11 +10,10 @@ from sqlalchemy.orm import selectinload
 
 from ..core.deps import get_db
 from ..models.academic import Class, ClassStudent, Schedule
-from ..models.attendance_v2 import Attendance, AttendanceStatus
 from ..models.leave_request import LeaveRequest, LeaveStatus
-from ..models.point_ledger import PointLedger
-from ..models.user import StudentProfile, User
-from ..services.storage_service import upload_leave_proof
+from ..models.user import User
+from ..application.adapters.storage_adapter import upload_leave_proof_bytes
+from ..application.use_cases.review_leave import review_leave as review_leave_use_case
 from .deps_auth import require_teacher, require_student
 from .helpers import get_or_404
 
@@ -148,10 +147,14 @@ async def submit_leave_request(
             detail="Đã có đơn nghỉ phép cho buổi học này",
         )
 
-    # 4. Upload minh chứng nếu có
+    # 4. Upload minh chứng nếu có (biên: UploadFile -> bytes rồi gọi port,
+    # validate jpeg/png/pdf 5MB + UUID giữ nguyên trong adapter)
     proof_url = None
     if proof_file is not None and proof_file.filename:
-        proof_url = await upload_leave_proof(proof_file)
+        proof_content = await proof_file.read()
+        proof_url = await upload_leave_proof_bytes(
+            proof_content, proof_file.content_type, proof_file.filename
+        )
 
     # 5. Tạo bản ghi đơn nghỉ phép
     leave_request = LeaveRequest(
@@ -286,73 +289,15 @@ async def review_leave_request(
             detail="Bạn không có quyền duyệt đơn của lớp học phần này",
         )
 
-    # 3. Cập nhật trạng thái đơn
+    # 3. Route thin: validate xong -> gọi use-case (giữ đúng thứ tự nghiệp vụ
+    # status -> EXCUSED -> refund check -> commit/rollback/refresh trong use-case).
     review_status = LeaveStatus[payload.status]
-    leave_req.status = review_status
-    leave_req.teacher_feedback = payload.feedback.strip() if payload.feedback else None
-    leave_req.reviewed_by = current_user.id
-    leave_req.reviewed_at = datetime.now(timezone.utc)
-
-    # 4. Nghiệp vụ phê duyệt (APPROVED)
-    if review_status == LeaveStatus.APPROVED:
-        # 4.1 Tìm hoặc tạo bản ghi attendance
-        att_stmt = select(Attendance).where(
-            Attendance.schedule_id == leave_req.schedule_id,
-            Attendance.student_id == leave_req.student_id,
-        )
-        att_res = await db.execute(att_stmt)
-        attendance = att_res.scalar_one_or_none()
-
-        if not attendance:
-            attendance = Attendance(
-                schedule_id=leave_req.schedule_id,
-                student_id=leave_req.student_id,
-                status=AttendanceStatus.EXCUSED,
-            )
-            db.add(attendance)
-        else:
-            attendance.status = AttendanceStatus.EXCUSED
-
-        # 4.2 Cơ chế Hoàn điểm duyệt muộn (Late Approval Refund Logic)
-        if attendance and attendance.is_evaluated:
-            # Kiểm tra xem sinh viên đã bị trừ bao nhiêu điểm do buổi học này
-            ledger_stmt = select(PointLedger).where(
-                PointLedger.student_id == leave_req.student_id,
-                PointLedger.schedule_id == leave_req.schedule_id,
-                PointLedger.point_delta < 0,
-            )
-            deduct_records = (await db.execute(ledger_stmt)).scalars().all()
-
-            # Tránh hoàn điểm 2 lần
-            refund_check_stmt = select(PointLedger).where(
-                PointLedger.student_id == leave_req.student_id,
-                PointLedger.schedule_id == leave_req.schedule_id,
-                PointLedger.reason_code == "LEAVE_REFUND",
-            )
-            already_refunded = (await db.execute(refund_check_stmt)).scalar_one_or_none()
-
-            if deduct_records and not already_refunded:
-                refund_points = sum(abs(r.point_delta) for r in deduct_records)
-                class_code_str = class_obj.class_code if class_obj else ""
-
-                refund_entry = PointLedger(
-                    student_id=leave_req.student_id,
-                    schedule_id=leave_req.schedule_id,
-                    point_delta=refund_points,
-                    reason_code="LEAVE_REFUND",
-                    description=f"Hoàn điểm chuyên cần do đơn nghỉ phép được duyệt bổ sung (Lớp {class_code_str})",
-                )
-                db.add(refund_entry)
-
-                # Cập nhật tăng điểm cho sinh viên trong student_profiles
-                sp_stmt = select(StudentProfile).where(
-                    StudentProfile.user_id == leave_req.student_id
-                )
-                profile = (await db.execute(sp_stmt)).scalar_one_or_none()
-                if profile:
-                    profile.total_point += refund_points
-
-    await db.commit()
-    await db.refresh(leave_req)
+    leave_req = await review_leave_use_case(
+        db,
+        leave=leave_req,
+        new_status=review_status,
+        feedback=payload.feedback,
+        reviewer_id=current_user.id,
+    )
 
     return format_leave_request(leave_req)

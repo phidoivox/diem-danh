@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import date, datetime, timedelta, timezone
+from datetime import date, datetime, timezone
 from typing import Any, Dict, List, Optional, Set
 from loguru import logger
 from sqlalchemy import select
@@ -11,6 +11,7 @@ from ..models.attendance_v2 import Attendance, AttendanceStatus
 from ..models.leave_request import LeaveRequest, LeaveStatus
 from ..models.point_ledger import PointLedger
 from ..models.user import StudentProfile
+from ..domain.policies.evaluation_policy import decide_attendance
 from .settings_repo import as_bool, as_int, load_settings_map
 
 
@@ -97,7 +98,6 @@ async def run_nightly_evaluation(
             continue
 
         sched_start_dt = datetime.combine(sched.study_date, sched.start_time)
-        late_deadline = sched_start_dt + timedelta(minutes=late_tolerance_minutes)
 
         # Bulk fetch: 1 query profiles + 1 query approved-leaves cho cả buổi
         # (thay N+1 query trong loop từng sinh viên).
@@ -121,57 +121,28 @@ async def run_nightly_evaluation(
         for att in unevaluated_attendances:
             profile = profile_by_student.get(att.student_id)
 
-            point_delta = 0
-
-            # Rule 1: Respect manual override by teacher
-            if att.is_manual_override:
-                point_delta = POINT_MAP.get(att.status, 0)
-                # Uniform violation applies if has_uniform is False and status != EXCUSED
-                if not att.has_uniform and att.status != AttendanceStatus.EXCUSED:
-                    point_delta += point_uniform_violation
-
-            else:
-                # Rule 2: Check approved leave requests (đã bulk-fetch ở trên)
-                if att.student_id in approved_ids:
-                    att.status = AttendanceStatus.EXCUSED
-                    point_delta = 0
-                else:
-                    # Rule 3: Auto-inference from check-in/check-out records
-                    if att.check_in_time is not None:
-                        cin = att.check_in_time
-                        cin_naive = (
-                            datetime.combine(cin.date(), cin.time())
-                            if cin.tzinfo is not None
-                            else cin
-                        )
-                        is_late = cin_naive > late_deadline
-
-                        if require_checkout:
-                            if att.check_out_time is not None:
-                                if is_late:
-                                    att.status = AttendanceStatus.LATE
-                                    point_delta = point_late
-                                else:
-                                    att.status = AttendanceStatus.PRESENT
-                                    point_delta = point_full
-                            else:
-                                att.status = AttendanceStatus.HALF_ABSENT
-                                point_delta = point_half_absence
-                        else:
-                            if is_late:
-                                att.status = AttendanceStatus.LATE
-                                point_delta = point_late
-                            else:
-                                att.status = AttendanceStatus.PRESENT
-                                point_delta = point_full
-
-                        # Uniform violation check
-                        if not att.has_uniform:
-                            point_delta += point_uniform_violation
-                    else:
-                        # No check-in recorded
-                        att.status = AttendanceStatus.ABSENT
-                        point_delta = point_absence_without_leave
+            # Policy thuần quyết định (status, point_delta) — giữ đúng thứ tự
+            # approved -> override -> check_in None -> tz-naive late -> checkout.
+            # POINT_MAP + bulk-fetch + ledger/max(0,..) giữ nguyên ở dưới.
+            points = dict(POINT_MAP)
+            points.update({k.value: v for k, v in POINT_MAP.items()})
+            points["UNIFORM_VIOLATION"] = point_uniform_violation
+            override_status_str = (
+                att.status.value if isinstance(att.status, AttendanceStatus) else str(att.status)
+            )
+            status_str, point_delta = decide_attendance(
+                att.check_in_time,
+                att.check_out_time,
+                sched_start_dt,
+                late_tolerance_minutes,
+                require_checkout,
+                att.has_uniform,
+                att.is_manual_override,
+                override_status_str,
+                att.student_id in approved_ids,
+                points,
+            )
+            att.status = AttendanceStatus(status_str)
 
             # Record in Point Ledger
             ledger_entry = PointLedger(

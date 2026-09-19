@@ -1,73 +1,43 @@
 from __future__ import annotations
 
-import time
-import uuid
-from pathlib import Path
 from typing import Optional
-from fastapi import HTTPException, UploadFile, status
-from loguru import logger
 
-from ..core.supabase import SupabaseStorageHelper, supabase_storage
+import numpy as np
+from fastapi import UploadFile
 
-ALLOWED_MIME_TYPES = {
-    "image/jpeg",
-    "image/png",
-    "application/pdf",
-}
+from ..application.adapters.storage_adapter import (
+    ALLOWED_MIME_TYPES as _ALLOWED_MIME_TYPES,
+    MAX_FILE_SIZE_BYTES as _MAX_FILE_SIZE_BYTES,
+    upload_leave_proof_bytes,
+)
 
-MAX_FILE_SIZE_BYTES = 5 * 1024 * 1024  # 5 MB
+ALLOWED_MIME_TYPES = _ALLOWED_MIME_TYPES
+
+MAX_FILE_SIZE_BYTES = _MAX_FILE_SIZE_BYTES
 
 
 async def upload_leave_proof(file: Optional[UploadFile]) -> Optional[str]:
-    """
-    Upload file minh chứng xin nghỉ phép lên Supabase Storage (hoặc local fallback).
+    """Upload file minh chứng (wrapper tương thích ngược).
 
-    - Kiểm tra MIME types (image/jpeg, image/png, application/pdf) -> 422 nếu sai.
-    - Kiểm tra kích thước <= 5MB -> 422 nếu vượt quá.
-    - Tạo tên file duy nhất (UUID + timestamp + extension).
-    - Trả về URL của file sau khi upload thành công.
+    Biên mới đọc UploadFile -> bytes ở routes rồi gọi port; hàm này giữ lại
+    cho code/tests cũ: đọc bytes tại đây rồi ủy thác cho adapter (validate
+    jpeg/png/pdf 5MB + UUID giữ nguyên một mối trong adapter).
     """
     if file is None or not file.filename:
         return None
 
-    if file.content_type not in ALLOWED_MIME_TYPES:
-        raise HTTPException(
-            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-            detail=(
-                f"Định dạng file '{file.content_type}' không hợp lệ. "
-                "Chỉ chấp nhận image/jpeg, image/png hoặc application/pdf."
-            ),
-        )
-
     content = await file.read()
-    if len(content) > MAX_FILE_SIZE_BYTES:
-        raise HTTPException(
-            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-            detail="Kích thước file vượt quá giới hạn tối đa cho phép (5MB).",
-        )
+    return await upload_leave_proof_bytes(content, file.content_type, file.filename)
 
-    ext = Path(file.filename).suffix.lower() if file.filename else ""
-    if ext not in [".jpg", ".jpeg", ".png", ".pdf"]:
-        ext_map = {
-            "image/jpeg": ".jpg",
-            "image/png": ".png",
-            "application/pdf": ".pdf",
-        }
-        ext = ext_map.get(file.content_type, ".jpg")
 
-    unique_filename = f"{uuid.uuid4().hex}_{int(time.time())}{ext}"
+async def upload_avatar(user_code: str, img: np.ndarray) -> Optional[str]:
+    """Upload ảnh chân dung lên bucket avatars và trả URL công khai.
 
-    try:
-        url = await supabase_storage.upload_file(
-            bucket=SupabaseStorageHelper.BUCKET_LEAVE_PROOFS,
-            path=unique_filename,
-            content=content,
-            content_type=file.content_type,
-        )
-        return url
-    except Exception as e:
-        logger.error(f"Lỗi khi upload minh chứng nghỉ phép: {e}")
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Không thể tải file minh chứng lên hệ thống lưu trữ.",
-        )
+    Ảnh được mã hoá JPEG (quality 85) trước khi upload — ảnh gốc từ điện thoại
+    thường là PNG/JPEG vài MB, không cần thiết cho một ảnh đại diện.
+
+    Trả None nếu upload thất bại (ảnh chỉ để hiển thị).
+    """
+    from .image_service import upload_avatar_image
+
+    return await upload_avatar_image(user_code, img)
