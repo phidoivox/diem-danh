@@ -9,6 +9,7 @@ import {
   AdminUser,
   getAdminClasses,
   createAdminClass,
+  updateAdminClass,
   deleteAdminClass,
   getAdminClassStudents,
   addStudentToClass,
@@ -18,11 +19,13 @@ import {
   getAdminUsers,
 } from "@/lib/api";
 import { ScheduleFormModal } from "@/components/admin/schedule-form-modal";
+import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import {
   Layers,
   Calendar,
   Search,
   Plus,
+  Pencil,
   Trash2,
   Users,
   Clock,
@@ -57,8 +60,9 @@ export default function AdminAcademicPage() {
   const [teachers, setTeachers] = useState<AdminUser[]>([]);
   const [availableStudents, setAvailableStudents] = useState<AdminUser[]>([]);
 
-  // Class create modal
+  // Class create/edit modal (dùng chung form; có editingClass = chế độ sửa)
   const [isCreateClassOpen, setIsCreateClassOpen] = useState(false);
+  const [editingClass, setEditingClass] = useState<AdminClass | null>(null);
   const [newClassCode, setNewClassCode] = useState("");
   const [newCourseName, setNewCourseName] = useState("");
   const [newTeacherId, setNewTeacherId] = useState<number | "">("");
@@ -75,11 +79,17 @@ export default function AdminAcademicPage() {
   const [isAddingStudent, setIsAddingStudent] = useState(false);
   const [studentsModalError, setStudentsModalError] = useState<string | null>(null);
 
-  // Schedule modal
+  // Schedule modal (tạo mới khi editingSchedule = null, sửa khi có giá trị)
   const [isScheduleModalOpen, setIsScheduleModalOpen] = useState(false);
+  const [editingSchedule, setEditingSchedule] = useState<AdminSchedule | null>(null);
 
   // Feedback message
   const [feedbackMsg, setFeedbackMsg] = useState<{ type: "success" | "error"; text: string } | null>(null);
+
+  // ConfirmDialog states (thay window.confirm chặn thread)
+  const [classToDelete, setClassToDelete] = useState<AdminClass | null>(null);
+  const [studentToRemove, setStudentToRemove] = useState<{ id: number; code: string } | null>(null);
+  const [scheduleToDelete, setScheduleToDelete] = useState<AdminSchedule | null>(null);
 
   // Load teachers for class creation
   useEffect(() => {
@@ -141,7 +151,33 @@ export default function AdminAcademicPage() {
     }
   }, [activeTab, fetchClasses, fetchSchedules]);
 
-  // Handle class creation
+  // Mở modal tạo lớp mới (reset form)
+  const openCreateClassModal = () => {
+    setEditingClass(null);
+    setNewClassCode("");
+    setNewCourseName("");
+    setNewSemester("2026.1");
+    setNewTotalSessions(15);
+    setCreateClassError(null);
+    if (teachers.length > 0 && !newTeacherId) {
+      setNewTeacherId(teachers[0].id);
+    }
+    setIsCreateClassOpen(true);
+  };
+
+  // Mở modal sửa lớp (nạp sẵn giá trị hiện tại)
+  const openEditClassModal = (c: AdminClass) => {
+    setEditingClass(c);
+    setNewClassCode(c.class_code);
+    setNewCourseName(c.course_name);
+    setNewTeacherId(c.teacher_id);
+    setNewSemester(c.semester);
+    setNewTotalSessions(c.total_sessions);
+    setCreateClassError(null);
+    setIsCreateClassOpen(true);
+  };
+
+  // Handle class creation / update
   const handleCreateClassSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setCreateClassError(null);
@@ -153,20 +189,27 @@ export default function AdminAcademicPage() {
 
     setIsCreatingClass(true);
     try {
-      await createAdminClass({
+      const payload = {
         class_code: newClassCode.trim().toUpperCase(),
         course_name: newCourseName.trim(),
         teacher_id: Number(newTeacherId),
         semester: newSemester.trim(),
         total_sessions: Number(newTotalSessions) || 15,
-      });
+      };
+      if (editingClass) {
+        await updateAdminClass(editingClass.id, payload);
+        setFeedbackMsg({ type: "success", text: `Đã cập nhật lớp học ${payload.class_code}` });
+      } else {
+        await createAdminClass(payload);
+        setFeedbackMsg({ type: "success", text: "Tạo lớp học phần mới thành công" });
+      }
       setIsCreateClassOpen(false);
+      setEditingClass(null);
       setNewClassCode("");
       setNewCourseName("");
-      setFeedbackMsg({ type: "success", text: "Tạo lớp học phần mới thành công" });
       fetchClasses();
     } catch (err: any) {
-      setCreateClassError(err.message || "Không thể tạo lớp học phần");
+      setCreateClassError(err.message || "Không thể lưu lớp học phần");
     } finally {
       setIsCreatingClass(false);
     }
@@ -174,12 +217,15 @@ export default function AdminAcademicPage() {
 
   // Handle class deletion
   const handleDeleteClass = async (c: AdminClass) => {
-    if (!window.confirm(`Bạn có chắc chắn muốn xóa lớp học phần [${c.class_code}] ${c.course_name}?`)) {
-      return;
-    }
+    setClassToDelete(c);
+  };
+
+  const handleConfirmDeleteClass = async () => {
+    if (!classToDelete) return;
     try {
-      await deleteAdminClass(c.id);
-      setFeedbackMsg({ type: "success", text: `Đã xóa lớp học ${c.class_code}` });
+      await deleteAdminClass(classToDelete.id);
+      setFeedbackMsg({ type: "success", text: `Đã xóa lớp học ${classToDelete.class_code}` });
+      setClassToDelete(null);
       fetchClasses();
     } catch (err: any) {
       setFeedbackMsg({ type: "error", text: err.message || "Không thể xóa lớp học" });
@@ -222,12 +268,16 @@ export default function AdminAcademicPage() {
   // Remove student from class
   const handleRemoveStudent = async (studentId: number, studentCode: string) => {
     if (!selectedClassForStudents) return;
-    if (!window.confirm(`Xóa sinh viên ${studentCode} khỏi lớp học phần này?`)) return;
+    setStudentToRemove({ id: studentId, code: studentCode });
+  };
 
+  const handleConfirmRemoveStudent = async () => {
+    if (!selectedClassForStudents || !studentToRemove) return;
     try {
-      await removeStudentFromClass(selectedClassForStudents.id, studentId);
+      await removeStudentFromClass(selectedClassForStudents.id, studentToRemove.id);
       const res = await getAdminClassStudents(selectedClassForStudents.id);
       setEnrolledStudents(res || []);
+      setStudentToRemove(null);
       fetchClasses(); // refresh count
     } catch (err: any) {
       setStudentsModalError(err.message || "Không thể xóa sinh viên khỏi lớp");
@@ -236,10 +286,15 @@ export default function AdminAcademicPage() {
 
   // Delete schedule
   const handleDeleteSchedule = async (s: AdminSchedule) => {
-    if (!window.confirm(`Xóa lịch học ngày ${s.study_date} (${s.room_name})?`)) return;
+    setScheduleToDelete(s);
+  };
+
+  const handleConfirmDeleteSchedule = async () => {
+    if (!scheduleToDelete) return;
     try {
-      await deleteAdminSchedule(s.id);
+      await deleteAdminSchedule(scheduleToDelete.id);
       setFeedbackMsg({ type: "success", text: "Đã xóa lịch học thành công" });
+      setScheduleToDelete(null);
       fetchSchedules();
     } catch (err: any) {
       setFeedbackMsg({ type: "error", text: err.message || "Không thể xóa lịch học" });
@@ -264,13 +319,7 @@ export default function AdminAcademicPage() {
           <div className="flex items-center gap-2">
             {activeTab === "CLASSES" ? (
               <button
-                onClick={() => {
-                  setCreateClassError(null);
-                  if (teachers.length > 0 && !newTeacherId) {
-                    setNewTeacherId(teachers[0].id);
-                  }
-                  setIsCreateClassOpen(true);
-                }}
+                onClick={openCreateClassModal}
                 className="inline-flex items-center gap-1.5 px-3.5 py-2 text-xs font-medium text-white bg-slate-900 hover:bg-slate-800 rounded-md transition-colors cursor-pointer shadow-xs"
               >
                 <Plus size={15} />
@@ -426,6 +475,13 @@ export default function AdminAcademicPage() {
                                 Ghi danh SV
                               </button>
                               <button
+                                onClick={() => openEditClassModal(c)}
+                                title="Sửa thông tin lớp học phần"
+                                className="p-1.5 text-slate-600 hover:bg-slate-100 rounded transition-colors cursor-pointer"
+                              >
+                                <Pencil size={14} />
+                              </button>
+                              <button
                                 onClick={() => handleDeleteClass(c)}
                                 title="Xóa lớp học phần"
                                 className="p-1.5 text-rose-600 hover:bg-rose-50 rounded transition-colors cursor-pointer"
@@ -559,13 +615,25 @@ export default function AdminAcademicPage() {
                             </span>
                           </td>
                           <td className="px-4 py-3 text-right">
-                            <button
-                              onClick={() => handleDeleteSchedule(s)}
-                              title="Xóa buổi học này"
-                              className="p-1.5 text-rose-600 hover:bg-rose-50 rounded transition-colors cursor-pointer"
-                            >
-                              <Trash2 size={14} />
-                            </button>
+                            <div className="flex items-center justify-end gap-1">
+                              <button
+                                onClick={() => {
+                                  setEditingSchedule(s);
+                                  setIsScheduleModalOpen(true);
+                                }}
+                                title="Sửa buổi học này"
+                                className="p-1.5 text-slate-600 hover:bg-slate-100 rounded transition-colors cursor-pointer"
+                              >
+                                <Pencil size={14} />
+                              </button>
+                              <button
+                                onClick={() => handleDeleteSchedule(s)}
+                                title="Xóa buổi học này"
+                                className="p-1.5 text-rose-600 hover:bg-rose-50 rounded transition-colors cursor-pointer"
+                              >
+                                <Trash2 size={14} />
+                              </button>
+                            </div>
                           </td>
                         </tr>
                       ))
@@ -578,15 +646,20 @@ export default function AdminAcademicPage() {
         )}
 
         {/* ===================================================================== */}
-        {/* MODAL: CREATE CLASS */}
+        {/* MODAL: CREATE / EDIT CLASS */}
         {/* ===================================================================== */}
         {isCreateClassOpen && (
           <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 backdrop-blur-xs p-4">
             <div className="relative w-full max-w-lg bg-white rounded-lg shadow-xl border border-slate-200 overflow-hidden">
               <div className="flex items-center justify-between px-6 py-4 border-b border-slate-200 bg-slate-50/50">
-                <h3 className="text-base font-semibold text-slate-900">Tạo mới lớp học phần</h3>
+                <h3 className="text-base font-semibold text-slate-900">
+                  {editingClass ? `Sửa lớp học phần ${editingClass.class_code}` : "Tạo mới lớp học phần"}
+                </h3>
                 <button
-                  onClick={() => setIsCreateClassOpen(false)}
+                  onClick={() => {
+                    setIsCreateClassOpen(false);
+                    setEditingClass(null);
+                  }}
                   className="p-1.5 text-slate-400 hover:text-slate-600 rounded-md hover:bg-slate-100 transition-colors cursor-pointer"
                 >
                   <X size={18} />
@@ -678,7 +751,10 @@ export default function AdminAcademicPage() {
                 <div className="flex items-center justify-end gap-3 pt-4 border-t border-slate-200">
                   <button
                     type="button"
-                    onClick={() => setIsCreateClassOpen(false)}
+                    onClick={() => {
+                      setIsCreateClassOpen(false);
+                      setEditingClass(null);
+                    }}
                     className="px-4 py-2 text-xs font-medium text-slate-700 bg-white border border-slate-200 rounded-md hover:bg-slate-50 transition-colors cursor-pointer"
                   >
                     Hủy bỏ
@@ -689,7 +765,7 @@ export default function AdminAcademicPage() {
                     className="flex items-center gap-2 px-4 py-2 text-xs font-medium text-white bg-slate-900 hover:bg-slate-800 rounded-md transition-colors disabled:opacity-50 cursor-pointer"
                   >
                     {isCreatingClass && <Loader2 size={14} className="animate-spin" />}
-                    Tạo lớp
+                    {editingClass ? "Lưu thay đổi" : "Tạo lớp"}
                   </button>
                 </div>
               </form>
@@ -836,15 +912,67 @@ export default function AdminAcademicPage() {
           </div>
         )}
 
-        {/* Schedule Form Modal */}
+        {/* Schedule Form Modal (tạo mới / sửa buổi học) */}
         <ScheduleFormModal
           isOpen={isScheduleModalOpen}
-          onClose={() => setIsScheduleModalOpen(false)}
+          onClose={() => {
+            setIsScheduleModalOpen(false);
+            setEditingSchedule(null);
+          }}
           onSuccess={() => {
             fetchSchedules();
-            setFeedbackMsg({ type: "success", text: "Xếp lịch học phần thành công" });
+            setEditingSchedule(null);
+            setFeedbackMsg({
+              type: "success",
+              text: editingSchedule ? "Cập nhật lịch học thành công" : "Xếp lịch học phần thành công",
+            });
           }}
           classes={classes}
+          initialSchedule={editingSchedule}
+        />
+
+        {/* ConfirmDialogs thay window.confirm */}
+        <ConfirmDialog
+          open={classToDelete !== null}
+          onOpenChange={(open) => {
+            if (!open) setClassToDelete(null);
+          }}
+          title="Xóa lớp học phần"
+          description={
+            classToDelete
+              ? `Bạn có chắc chắn muốn xóa lớp học phần [${classToDelete.class_code}] ${classToDelete.course_name}?`
+              : ""
+          }
+          confirmLabel="Xóa lớp"
+          onConfirm={handleConfirmDeleteClass}
+        />
+        <ConfirmDialog
+          open={studentToRemove !== null}
+          onOpenChange={(open) => {
+            if (!open) setStudentToRemove(null);
+          }}
+          title="Xóa sinh viên khỏi lớp"
+          description={
+            studentToRemove
+              ? `Xóa sinh viên ${studentToRemove.code} khỏi lớp học phần này?`
+              : ""
+          }
+          confirmLabel="Xóa khỏi lớp"
+          onConfirm={handleConfirmRemoveStudent}
+        />
+        <ConfirmDialog
+          open={scheduleToDelete !== null}
+          onOpenChange={(open) => {
+            if (!open) setScheduleToDelete(null);
+          }}
+          title="Xóa buổi học"
+          description={
+            scheduleToDelete
+              ? `Xóa lịch học ngày ${scheduleToDelete.study_date} (${scheduleToDelete.room_name})?`
+              : ""
+          }
+          confirmLabel="Xóa lịch"
+          onConfirm={handleConfirmDeleteSchedule}
         />
       </div>
     </RoleGuard>

@@ -2,6 +2,7 @@
 
 import React, { useState, useEffect, useMemo, Suspense } from "react";
 import { useSearchParams } from "next/navigation";
+import { toast } from "sonner";
 import { RoleGuard } from "@/components/layout/role-guard";
 import {
   getTeacherClasses,
@@ -154,6 +155,10 @@ function TeacherReportsContent() {
     };
   }, [report?.students]);
 
+  // Ngưỡng backend đang áp dụng (Admin đổi ở /admin/settings thì trang này đổi theo)
+  const warnPercent = report?.warning_percent ?? 15;
+  const banPercent = report?.ban_percent ?? 20;
+
   // Export excel
   const handleExportExcel = async () => {
     if (!selectedClassId || !currentClass) return;
@@ -162,7 +167,7 @@ function TeacherReportsContent() {
       const filename = `bao_cao_cam_thi_${currentClass.class_code}.xlsx`;
       await downloadTeacherExamBanExcel(selectedClassId, filename);
     } catch (err: any) {
-      alert(err?.message || "Không thể xuất file Excel.");
+      toast.error(err?.message || "Không thể xuất file Excel.");
     } finally {
       setDownloading(false);
     }
@@ -206,7 +211,7 @@ function TeacherReportsContent() {
             Báo cáo Chuyên cần & Danh sách Cấm thi
           </h1>
           <p className="text-sm text-slate-500 mt-0.5">
-            Theo dõi tỷ lệ vắng theo quy chế học vụ (Cảnh báo $\ge 15\%$, Cấm thi $\ge 20\%$) và xuất file Excel
+            Theo dõi tỷ lệ vắng theo quy chế học vụ (Cảnh báo ≥ {warnPercent}%, Cấm thi ≥ {banPercent}%) và xuất file Excel
           </p>
         </div>
 
@@ -313,7 +318,7 @@ function TeacherReportsContent() {
               {summary.banned}
             </p>
             <p className="text-[11px] text-rose-600/80 mt-0.5">
-              Vắng cả kỳ $\ge 20\%$
+              Vắng cả kỳ ≥ {banPercent}%
             </p>
           </div>
           <div className="w-10 h-10 rounded-md bg-rose-100 border border-rose-200 flex items-center justify-center text-rose-700">
@@ -331,7 +336,7 @@ function TeacherReportsContent() {
               {summary.warning}
             </p>
             <p className="text-[11px] text-amber-600/80 mt-0.5">
-              Vắng lũy kế $\ge 15\%$
+              Vắng lũy kế ≥ {warnPercent}%
             </p>
           </div>
           <div className="w-10 h-10 rounded-md bg-amber-100 border border-amber-200 flex items-center justify-center text-amber-700">
@@ -477,14 +482,18 @@ function TeacherReportsContent() {
                         </td>
                         <td
                           className={`px-4 py-3 text-center font-mono tabular-nums text-xs font-semibold ${
-                            cumRate >= 15 ? "text-amber-700" : "text-slate-700"
+                            st.is_banned
+                              ? "text-rose-700"
+                              : st.is_warning
+                              ? "text-amber-700"
+                              : "text-slate-700"
                           }`}
                         >
                           {cumRate}%
                         </td>
                         <td
                           className={`px-4 py-3 text-center font-mono tabular-nums text-xs font-semibold ${
-                            semRate >= 20 ? "text-rose-700 font-bold" : "text-slate-700"
+                            st.is_banned ? "text-rose-700 font-bold" : "text-slate-700"
                           }`}
                         >
                           {semRate}%

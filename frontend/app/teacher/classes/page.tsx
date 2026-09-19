@@ -2,6 +2,7 @@
 
 import React, { useState, useEffect, useMemo } from "react";
 import Link from "next/link";
+import { toast } from "sonner";
 import { RoleGuard } from "@/components/layout/role-guard";
 import {
   getTeacherClasses,
@@ -85,7 +86,7 @@ export default function TeacherClassesPage() {
       setDownloadingId(c.id);
       await downloadTeacherExamBanExcel(c.id, `cam_thi_${c.class_code}.xlsx`);
     } catch (err: any) {
-      alert(err?.message || "Lỗi khi tải file báo cáo Excel");
+      toast.error(err?.message || "Lỗi khi tải file báo cáo Excel");
     } finally {
       setDownloadingId(null);
     }
@@ -154,15 +155,11 @@ export default function TeacherClassesPage() {
           <div className="p-4 bg-white rounded-lg border border-slate-200 shadow-sm flex items-center justify-between sm:col-span-2 lg:col-span-1">
             <div>
               <p className="text-xs font-medium text-slate-500 uppercase tracking-wider">
-                Chế độ giám sát
+                Điểm danh
               </p>
               <div className="flex items-center gap-2 mt-1.5">
-                <span className="relative flex h-2 w-2">
-                  <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
-                  <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500"></span>
-                </span>
                 <span className="text-sm font-semibold text-slate-800">
-                  Kiosk AI Realtime Sẵn sàng
+                  Giảng viên điểm danh thủ công
                 </span>
               </div>
             </div>
@@ -324,17 +321,47 @@ export default function TeacherClassesPage() {
                       </span>
                     </div>
                   </div>
+
+                  {/* Today schedule indicator */}
+                  {c.today_schedule ? (
+                    <div className="mt-3 p-2 rounded bg-emerald-50 border border-emerald-200 text-xs text-emerald-800 flex items-center justify-between">
+                      <div className="flex items-center gap-1.5">
+                        <span className="relative flex h-2 w-2">
+                          <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
+                          <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500"></span>
+                        </span>
+                        <span className="font-medium">Tiết hôm nay:</span>
+                        <span className="font-mono font-bold">
+                          {c.today_schedule.start_time.slice(0, 5)} - {c.today_schedule.end_time.slice(0, 5)}
+                        </span>
+                      </div>
+                      <span className="font-mono text-[11px] bg-emerald-100 text-emerald-900 px-1.5 py-0.5 rounded border border-emerald-300">
+                        {c.today_schedule.room_name}
+                      </span>
+                    </div>
+                  ) : (
+                    <div className="mt-3 p-2 rounded bg-slate-50 border border-slate-200 text-[11px] text-slate-500 flex items-center gap-1.5">
+                      <Clock size={12} className="text-slate-400" />
+                      <span>Hôm nay không có tiết dạy</span>
+                    </div>
+                  )}
                 </div>
 
                 {/* Actions Footer */}
                 <div className="px-4 py-3 bg-slate-50 border-t border-slate-200 flex items-center justify-between gap-2">
-                  <Link
-                    href={`/teacher/classes/${c.id}/live`}
-                    className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-semibold bg-emerald-600 text-white hover:bg-emerald-700 shadow-xs transition-colors"
-                  >
-                    <Radio size={13} className="animate-pulse" />
-                    <span>Live Sĩ số</span>
-                  </Link>
+                  <div className="flex items-center gap-1.5">
+                    <Link
+                      href={`/teacher/classes/${c.id}/live`}
+                      className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs transition-colors ${
+                        c.today_schedule
+                          ? "font-medium text-slate-700 bg-white hover:bg-slate-100 border border-slate-200 shadow-2xs"
+                          : "font-semibold bg-slate-800 text-white hover:bg-slate-900 shadow-xs"
+                      }`}
+                    >
+                      <Radio size={13} className={c.today_schedule ? "animate-pulse text-emerald-600" : ""} />
+                      <span>{c.today_schedule ? "Live Sĩ số" : "Chi tiết lớp"}</span>
+                    </Link>
+                  </div>
 
                   <div className="flex items-center gap-1.5">
                     <Link
@@ -407,10 +434,14 @@ export default function TeacherClassesPage() {
                         <div className="flex items-center justify-end gap-2">
                           <Link
                             href={`/teacher/classes/${c.id}/live`}
-                            className="inline-flex items-center gap-1 px-2.5 py-1 rounded text-xs font-semibold bg-emerald-600 text-white hover:bg-emerald-700 transition-colors shadow-2xs"
+                            className={`inline-flex items-center gap-1 px-2.5 py-1 rounded text-xs transition-colors ${
+                              c.today_schedule
+                                ? "font-medium text-slate-700 bg-slate-100 hover:bg-slate-200"
+                                : "font-semibold bg-slate-800 text-white hover:bg-slate-900 shadow-2xs"
+                            }`}
                           >
-                            <Radio size={12} className="animate-pulse" />
-                            <span>Live</span>
+                            <Radio size={12} className={c.today_schedule ? "animate-pulse text-emerald-600" : ""} />
+                            <span>{c.today_schedule ? "Sĩ số" : "Chi tiết"}</span>
                           </Link>
                           <Link
                             href={`/teacher/reports?class_id=${c.id}`}
