@@ -49,7 +49,7 @@ def validate_leave_proof_bytes(data: bytes, content_type: Optional[str]) -> None
     """Validate MIME + kích thước, raise 422 với message như storage_service cũ."""
     if content_type not in ALLOWED_MIME_TYPES:
         raise HTTPException(
-            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
             detail=(
                 f"Định dạng file '{content_type}' không hợp lệ. "
                 "Chỉ chấp nhận image/jpeg, image/png hoặc application/pdf."
@@ -57,7 +57,7 @@ def validate_leave_proof_bytes(data: bytes, content_type: Optional[str]) -> None
         )
     if len(data) > MAX_FILE_SIZE_BYTES:
         raise HTTPException(
-            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
             detail="Kích thước file vượt quá giới hạn tối đa cho phép (5MB).",
         )
 

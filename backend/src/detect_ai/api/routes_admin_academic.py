@@ -270,7 +270,7 @@ async def update_class(
     if body.total_sessions is not None:
         if body.total_sessions < 1:
             raise HTTPException(
-                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
                 detail="total_sessions phải >= 1",
             )
         clazz.total_sessions = body.total_sessions
@@ -461,7 +461,7 @@ async def create_schedule(
     # 1. Check time order
     if body.start_time >= body.end_time:
         raise HTTPException(
-            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
             detail="start_time phải nhỏ hơn end_time",
         )
 
@@ -536,7 +536,7 @@ async def update_schedule(
     if body.session_order is not None:
         if body.session_order < 1:
             raise HTTPException(
-                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
                 detail="session_order phải >= 1",
             )
         sched.session_order = body.session_order
@@ -544,7 +544,7 @@ async def update_schedule(
     # 1. Check time order (trên giá trị sau khi gộp)
     if sched.start_time >= sched.end_time:
         raise HTTPException(
-            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
             detail="start_time phải nhỏ hơn end_time",
         )
 

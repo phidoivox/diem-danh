@@ -2,6 +2,7 @@
 
 import React from "react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { ApiError } from "./api";
 
 let client: QueryClient | null = null;
 
@@ -14,7 +15,7 @@ function getQueryClient(): QueryClient {
           gcTime: 5 * 60_000,
           retry: (failureCount, error) => {
             // 401 (hết phiên/token) -> không retry, redirect login đã xử lý ở authFetch
-            if (error instanceof Error && /401|Unauthorized/i.test(error.message)) {
+            if (error instanceof ApiError && error.status === 401) {
               return false;
             }
             return failureCount < 1;

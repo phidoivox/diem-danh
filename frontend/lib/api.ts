@@ -1,7 +1,30 @@
 export const API = process.env.NEXT_PUBLIC_API || "http://localhost:8000";
-export const WS = API.replace(/^http/, "ws") + "/ws/attendance/webcam";
 
 export const TOKEN_STORAGE_KEY = "detect_ai_token";
+
+export class ApiError extends Error {
+  status: number;
+  constructor(message: string, status: number) {
+    super(message);
+    this.name = "ApiError";
+    this.status = status;
+  }
+}
+
+/**
+ * Chuẩn hoá URL file tĩnh do backend trả về.
+ *
+ * Khi chạy offline (không cấu hình Supabase), backend ghi file xuống đĩa và trả về
+ * đường dẫn tương đối dạng "/static/storage/<bucket>/<file>". Đường dẫn này phải ghép
+ * với API gốc thì <img>/<a> mới trỏ đúng. URL tuyệt đối (Supabase Storage) giữ nguyên.
+ */
+export function mediaUrl(url?: string | null): string {
+  if (!url) return "";
+  if (/^(https?:)?\/\//i.test(url) || url.startsWith("data:") || url.startsWith("blob:")) {
+    return url;
+  }
+  return `${API}${url.startsWith("/") ? "" : "/"}${url}`;
+}
 
 export function getToken(): string | null {
   if (typeof window === "undefined") return null;
@@ -19,6 +42,59 @@ export function removeToken(): void {
 }
 
 export type UserRole = "ADMIN" | "TEACHER" | "STUDENT";
+
+/** Một nơi duy nhất ánh xạ role -> portal mặc định (trước lặp ở login/page,
+// role-guard, app/page). */
+export function getDefaultPortalPath(role?: string | null): string {
+  if (role === "STUDENT") return "/student/schedule";
+  if (role === "TEACHER") return "/teacher/classes";
+  if (role === "ADMIN") return "/admin/users";
+  return "/login";
+}
+
+/** Dựng query string, bỏ qua undefined/null/"" và giá trị "ALL". */
+export function buildQuery(params: Record<string, string | number | undefined | null>): string {
+  const sp = new URLSearchParams();
+  for (const [k, v] of Object.entries(params)) {
+    if (v === undefined || v === null || v === "" || v === "ALL") continue;
+    sp.append(k, String(v));
+  }
+  const qs = sp.toString();
+  return qs ? `?${qs}` : "";
+}
+
+/** Tải file blob (Excel/báo cáo): một helper thay 2 bản copy download. */
+export async function downloadFile(url: string, fallbackName: string): Promise<void> {
+  const token = getToken();
+  const headers: Record<string, string> = {};
+  if (token) headers["Authorization"] = `Bearer ${token}`;
+  const res = await fetch(url.startsWith("http") ? url : `${API}${url}`, { headers });
+  if (!res.ok) {
+    let errMsg = "Không thể tải file";
+    try {
+      const errJson = await res.json();
+      errMsg = errJson.detail || errMsg;
+    } catch {
+      // ignore
+    }
+    throw new Error(errMsg);
+  }
+  const disposition = res.headers.get("Content-Disposition");
+  let downloadName = fallbackName;
+  if (disposition) {
+    const match = disposition.match(/filename="?([^"]+)"?/);
+    if (match?.[1]) downloadName = match[1];
+  }
+  const blob = await res.blob();
+  const objectUrl = window.URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = objectUrl;
+  a.download = downloadName;
+  document.body.appendChild(a);
+  a.click();
+  window.URL.revokeObjectURL(objectUrl);
+  document.body.removeChild(a);
+}
 
 export interface StudentProfile {
   id: number;
@@ -90,8 +166,12 @@ export async function authFetch<T = any>(
     }
     if (response.status === 401) {
       removeToken();
+      // Tập trung redirect login tại 1 chỗ thay vì mỗi caller tự xử lý.
+      if (typeof window !== "undefined" && !window.location.pathname.startsWith("/login")) {
+        window.location.href = "/login";
+      }
     }
-    throw new Error(errorDetail || `HTTP error ${response.status}`);
+    throw new ApiError(errorDetail || `HTTP error ${response.status}`, response.status);
   }
 
   return response.json();
@@ -225,6 +305,15 @@ export async function submitLeaveRequest(formData: FormData): Promise<StudentLea
 // =====================================================================
 // TEACHER PORTAL API DEFINITIONS
 // =====================================================================
+export interface ScheduleBrief {
+  id: number;
+  study_date: string;
+  start_time: string;
+  end_time: string;
+  room_name: string;
+  session_order: number;
+}
+
 export interface TeacherClass {
   id: number;
   class_code: string;
@@ -233,6 +322,7 @@ export interface TeacherClass {
   semester: string;
   total_sessions: number;
   student_count: number;
+  today_schedule?: ScheduleBrief | null;
 }
 
 export interface LiveAttendanceStudent {
@@ -344,6 +434,9 @@ export interface ExamBanReport {
   teacher_name?: string;
   total_sessions: number;
   elapsed_sessions: number;
+  /** Ngưỡng cảnh báo/cấm thi (%) backend đang áp dụng (mặc định 15/20). */
+  warning_percent?: number;
+  ban_percent?: number;
   students: ExamBanStudent[];
 }
 
@@ -390,14 +483,13 @@ export async function getTeacherLeaveRequests(params?: {
   page?: number;
   size?: number;
 }): Promise<TeacherLeaveRequestPage> {
-  const searchParams = new URLSearchParams();
-  if (params?.status && params.status !== "ALL") searchParams.append("status", params.status);
-  if (params?.class_id) searchParams.append("class_id", String(params.class_id));
-  if (params?.page) searchParams.append("page", String(params.page));
-  searchParams.append("size", String(params?.size || 100));
-
-  const qs = searchParams.toString();
-  return authFetch<TeacherLeaveRequestPage>(`/api/v1/teacher/leave-requests${qs ? `?${qs}` : ""}`);
+  const qs = buildQuery({
+    status: params?.status,
+    class_id: params?.class_id,
+    page: params?.page,
+    size: params?.size || 100,
+  });
+  return authFetch<TeacherLeaveRequestPage>(`/api/v1/teacher/leave-requests${qs}`);
 }
 
 export async function reviewLeaveRequest(
@@ -422,44 +514,23 @@ export async function getTeacherExamBanReport(classId: number): Promise<ExamBanR
   return res;
 }
 
-export async function downloadTeacherExamBanExcel(classId: number, filename?: string): Promise<void> {
-  const token = getToken();
-  const headers: Record<string, string> = {};
-  if (token) {
-    headers["Authorization"] = `Bearer ${token}`;
+export async function getAdminExamBanReport(classId: number): Promise<ExamBanReport> {
+  const res = await authFetch<ExamBanReport>(`/api/v1/admin/reports/classes/${classId}/exam-ban-report`);
+  if (res && Array.isArray(res.students)) {
+    res.students = res.students.map((st: any) => ({
+      ...st,
+      cumulative_rate: st.cumulative_rate ?? st.rate_cumulative ?? 0,
+      semester_rate: st.semester_rate ?? st.rate_semester ?? 0,
+    }));
   }
-  const res = await fetch(`${API}/api/v1/teacher/classes/${classId}/export-exam-ban-excel`, {
-    headers,
-  });
-  if (!res.ok) {
-    let errMsg = "Không thể tải file Excel báo cáo cấm thi";
-    try {
-      const errJson = await res.json();
-      errMsg = errJson.detail || errMsg;
-    } catch {
-      // ignore
-    }
-    throw new Error(errMsg);
-  }
-  const disposition = res.headers.get("Content-Disposition");
-  let downloadName = filename;
-  if (!downloadName && disposition) {
-    const match = disposition.match(/filename="?([^"]+)"?/);
-    if (match && match[1]) downloadName = match[1];
-  }
-  if (!downloadName) {
-    downloadName = `cam_thi_lop_${classId}.xlsx`;
-  }
+  return res;
+}
 
-  const blob = await res.blob();
-  const url = window.URL.createObjectURL(blob);
-  const a = document.createElement("a");
-  a.href = url;
-  a.download = downloadName;
-  document.body.appendChild(a);
-  a.click();
-  window.URL.revokeObjectURL(url);
-  document.body.removeChild(a);
+export async function downloadTeacherExamBanExcel(classId: number, filename?: string): Promise<void> {
+  await downloadFile(
+    `/api/v1/teacher/classes/${classId}/export-exam-ban-excel`,
+    filename || `cam_thi_lop_${classId}.xlsx`
+  );
 }
 
 // =====================================================================
@@ -569,13 +640,8 @@ export async function getAdminUsers(params?: {
   role?: string;
   q?: string;
 }): Promise<AdminUserPage> {
-  const sp = new URLSearchParams();
-  if (params?.page) sp.append("page", String(params.page));
-  if (params?.size) sp.append("size", String(params.size));
-  if (params?.role && params.role !== "ALL") sp.append("role", params.role);
-  if (params?.q) sp.append("q", params.q);
-  const qs = sp.toString();
-  const res = await authFetch<AdminUserPage>(`/api/v1/admin/users${qs ? `?${qs}` : ""}`);
+  const qs = buildQuery({ page: params?.page, size: params?.size, role: params?.role, q: params?.q });
+  const res = await authFetch<AdminUserPage>(`/api/v1/admin/users${qs}`);
   if (res && Array.isArray(res.items)) {
     res.items = res.items.map((u) => ({
       ...u,
@@ -613,14 +679,14 @@ export async function deleteAdminUser(id: number): Promise<{ ok: boolean; messag
   });
 }
 
-export async function enrollUserFace(
+export async function uploadUserAvatar(
   id: number,
   file: File
-): Promise<{ ok: boolean; user_id: number; face_enrolled: boolean }> {
+): Promise<{ ok: boolean; user_id: number; avatar_url?: string | null }> {
   const fd = new FormData();
   fd.append("photo", file);
-  return authFetch<{ ok: boolean; user_id: number; face_enrolled: boolean }>(
-    `/api/v1/admin/users/${id}/face-enroll`,
+  return authFetch<{ ok: boolean; user_id: number; avatar_url?: string | null }>(
+    `/api/v1/admin/users/${id}/avatar`,
     {
       method: "POST",
       body: fd,
@@ -633,12 +699,8 @@ export async function getAdminClasses(params?: {
   size?: number;
   q?: string;
 }): Promise<AdminClassPage> {
-  const sp = new URLSearchParams();
-  if (params?.page) sp.append("page", String(params.page));
-  if (params?.size) sp.append("size", String(params.size));
-  if (params?.q) sp.append("q", params.q);
-  const qs = sp.toString();
-  return authFetch<AdminClassPage>(`/api/v1/admin/academic/classes${qs ? `?${qs}` : ""}`);
+  const qs = buildQuery({ page: params?.page, size: params?.size, q: params?.q });
+  return authFetch<AdminClassPage>(`/api/v1/admin/academic/classes${qs}`);
 }
 
 export async function createAdminClass(data: any): Promise<AdminClass> {
@@ -695,17 +757,24 @@ export async function getAdminSchedules(params?: {
   study_date?: string;
   room_name?: string;
 }): Promise<AdminSchedule[]> {
-  const sp = new URLSearchParams();
-  if (params?.class_id) sp.append("class_id", String(params.class_id));
-  if (params?.study_date) sp.append("study_date", params.study_date);
-  if (params?.room_name) sp.append("room_name", params.room_name);
-  const qs = sp.toString();
-  return authFetch<AdminSchedule[]>(`/api/v1/admin/academic/schedules${qs ? `?${qs}` : ""}`);
+  const qs = buildQuery({
+    class_id: params?.class_id,
+    study_date: params?.study_date,
+    room_name: params?.room_name,
+  });
+  return authFetch<AdminSchedule[]>(`/api/v1/admin/academic/schedules${qs}`);
 }
 
 export async function createAdminSchedule(data: any): Promise<AdminSchedule> {
   return authFetch<AdminSchedule>("/api/v1/admin/academic/schedules", {
     method: "POST",
+    body: JSON.stringify(data),
+  });
+}
+
+export async function updateAdminSchedule(id: number, data: any): Promise<AdminSchedule> {
+  return authFetch<AdminSchedule>(`/api/v1/admin/academic/schedules/${id}`, {
+    method: "PUT",
     body: JSON.stringify(data),
   });
 }
@@ -730,10 +799,8 @@ export async function updateAdminSettings(
 }
 
 export async function triggerNightlyEvaluation(targetDate?: string): Promise<EvaluationResult> {
-  const sp = new URLSearchParams();
-  if (targetDate) sp.append("target_date", targetDate);
-  const qs = sp.toString();
-  return authFetch<EvaluationResult>(`/api/v1/admin/evaluation/run-now${qs ? `?${qs}` : ""}`, {
+  const qs = buildQuery({ target_date: targetDate });
+  return authFetch<EvaluationResult>(`/api/v1/admin/evaluation/run-now${qs}`, {
     method: "POST",
   });
 }
@@ -741,118 +808,6 @@ export async function triggerNightlyEvaluation(targetDate?: string): Promise<Eva
 export async function downloadAllSchoolExamBanExcel(
   filename = "danh_sach_cam_thi_toan_truong.xlsx"
 ): Promise<void> {
-  const token = getToken();
-  const headers: Record<string, string> = {};
-  if (token) {
-    headers["Authorization"] = `Bearer ${token}`;
-  }
-  const res = await fetch(`${API}/api/v1/admin/reports/export-exam-ban-all-excel`, {
-    headers,
-  });
-  if (!res.ok) {
-    let errMsg = "Không thể tải file Excel danh sách cấm thi toàn trường";
-    try {
-      const errJson = await res.json();
-      errMsg = errJson.detail || errMsg;
-    } catch {
-      // ignore
-    }
-    throw new Error(errMsg);
-  }
-  const disposition = res.headers.get("Content-Disposition");
-  let downloadName = filename;
-  if (disposition) {
-    const match = disposition.match(/filename="?([^"]+)"?/);
-    if (match && match[1]) downloadName = match[1];
-  }
-
-  const blob = await res.blob();
-  const url = window.URL.createObjectURL(blob);
-  const a = document.createElement("a");
-  a.href = url;
-  a.download = downloadName;
-  document.body.appendChild(a);
-  a.click();
-  window.URL.revokeObjectURL(url);
-  document.body.removeChild(a);
-}
-
-// Legacy & Utility API definitions
-export type Att = { id: number; code: string; uniform: string; violations: string; snapshot: string; at: string };
-export type Student = { id: number; code: string; name: string; class_name: string; photo?: string };
-export type Page<T> = { items: T[]; total: number; page: number; size: number };
-
-async function j<T>(url: string, init?: RequestInit): Promise<T> {
-  const r = await fetch(url, { cache: "no-store", ...init });
-  if (!r.ok) throw new Error(await r.text());
-  return r.json();
-}
-
-export const getAtt = (limit = 50, status = "", q = ""): Promise<Att[]> =>
-  j(`${API}/api/attendance?limit=${limit}&status=${status}&q=${encodeURIComponent(q)}`);
-export const getStudents = (page = 1, size = 50, q = ""): Promise<Page<Student>> =>
-  j(`${API}/api/students?page=${page}&size=${size}&q=${encodeURIComponent(q)}`);
-export const addStudent = (fd: FormData) =>
-  j(`${API}/api/students`, { method: "POST", body: fd });
-export const updateStudent = (id: number, fd: FormData) =>
-  j(`${API}/api/students/${id}`, { method: "PUT", body: fd });
-export const deleteStudent = (id: number) =>
-  j(`${API}/api/students/${id}`, { method: "DELETE" });
-export const studentPhoto = (name?: string) => (name ? `${API}/api/students/photo/${name}` : "");
-export const toCsv = (rows: Att[]) =>
-  "id,code,uniform,violations,at\n" +
-  rows.map((r) => [r.id, r.code, r.uniform, `"${r.violations}"`, r.at].join(",")).join("\n");
-
-// =====================================================================
-// KIOSK ATTENDANCE API DEFINITIONS
-// =====================================================================
-export interface KioskRecordPayload {
-  room_name: string;
-  student_code: string;
-  has_uniform: boolean;
-  timestamp?: string;
-}
-
-export interface KioskRecordResponse {
-  type: "CHECK_IN" | "CHECK_OUT";
-  student_code: string;
-  student_name: string;
-  room_name: string;
-  class_code: string;
-  status?: string;
-  has_uniform: boolean;
-  time?: string;
-  check_in_time?: string;
-  check_out_time?: string;
-  violations?: string[];
-  error?: string;
-}
-
-export async function recordKioskAttendance(
-  payload: KioskRecordPayload
-): Promise<KioskRecordResponse> {
-  const kioskKey =
-    process.env.NEXT_PUBLIC_KIOSK_API_KEY || "kiosk-secret-key-2026";
-  const res = await fetch(`${API}/api/v1/attendance/kiosk-record`, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      "X-Kiosk-Api-Key": kioskKey,
-    },
-    body: JSON.stringify(payload),
-  });
-
-  if (!res.ok) {
-    let errorDetail = "";
-    try {
-      const errJson = await res.json();
-      errorDetail = errJson.detail || JSON.stringify(errJson);
-    } catch {
-      errorDetail = await res.text();
-    }
-    throw new Error(errorDetail || `Lỗi ghi nhận điểm danh (${res.status})`);
-  }
-
-  return res.json();
+  await downloadFile("/api/v1/admin/reports/export-exam-ban-all-excel", filename);
 }
 

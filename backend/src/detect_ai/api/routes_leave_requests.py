@@ -15,7 +15,6 @@ from ..models.user import User
 from ..application.adapters.storage_adapter import upload_leave_proof_bytes
 from ..application.use_cases.review_leave import review_leave as review_leave_use_case
 from .deps_auth import require_teacher, require_student
-from .helpers import get_or_404
 
 router = APIRouter()
 
@@ -267,10 +266,9 @@ async def review_leave_request(
     current_user: User = Depends(require_teacher),
     db: AsyncSession = Depends(get_db),
 ):
-    # 1. 404 cho khóa đơn qua get_or_404 (giữ nguyên message), rồi nạp eager
-    # schedule.clazz + student.student_profile bằng đúng query cũ để giữ
-    # nguyên nghiệp vụ duyệt (async cấm lazy-load sau commit).
-    await get_or_404(db, LeaveRequest, id, detail="Đơn nghỉ phép không tồn tại")
+    # 1. Nạp đơn + eager schedule.clazz + student.student_profile trong 1 query
+    # (gộp double-fetch: bỏ get_or_404 + scalar_one() riêng lẻ; async cấm
+    # lazy-load sau commit nên giữ nguyên eager options).
     stmt = (
         select(LeaveRequest)
         .options(
@@ -279,7 +277,12 @@ async def review_leave_request(
         )
         .where(LeaveRequest.id == id)
     )
-    leave_req = (await db.execute(stmt)).scalar_one()
+    leave_req = (await db.execute(stmt)).scalar_one_or_none()
+    if leave_req is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Đơn nghỉ phép không tồn tại",
+        )
 
     # 2. Kiểm tra quyền sở hữu lớp học phần
     class_obj = leave_req.schedule.clazz if leave_req.schedule else None
