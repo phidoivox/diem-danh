@@ -14,6 +14,7 @@ from ..models.academic import Class, ClassStudent, Schedule
 from ..models.user import Role, StudentProfile, User
 from .deps_auth import require_admin
 from .dto import ClassResponse, build_class_response
+from .helpers import get_or_404
 
 router = APIRouter(dependencies=[Depends(require_admin)])
 
@@ -302,12 +303,7 @@ async def delete_class(
     class_id: int,
     s: AsyncSession = Depends(get_db),
 ):
-    clazz = (await s.execute(select(Class).where(Class.id == class_id))).scalar_one_or_none()
-    if not clazz:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail=f"Không tìm thấy lớp học phần có ID {class_id}",
-        )
+    clazz = await get_or_404(s, Class, class_id, detail=f"Không tìm thấy lớp học phần có ID {class_id}")
 
     await s.delete(clazz)
     await s.commit()
@@ -322,12 +318,7 @@ async def list_class_students(
     class_id: int,
     s: AsyncSession = Depends(get_db),
 ):
-    clazz = (await s.execute(select(Class).where(Class.id == class_id))).scalar_one_or_none()
-    if not clazz:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail=f"Không tìm thấy lớp học phần có ID {class_id}",
-        )
+    clazz = await get_or_404(s, Class, class_id, detail=f"Không tìm thấy lớp học phần có ID {class_id}")
 
     stmt = (
         select(User)
@@ -361,12 +352,7 @@ async def enroll_student(
     body: EnrollStudentRequest,
     s: AsyncSession = Depends(get_db),
 ):
-    clazz = (await s.execute(select(Class).where(Class.id == class_id))).scalar_one_or_none()
-    if not clazz:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail=f"Không tìm thấy lớp học phần có ID {class_id}",
-        )
+    clazz = await get_or_404(s, Class, class_id, detail=f"Không tìm thấy lớp học phần có ID {class_id}")
 
     # Check student exists and is active
     student = (
@@ -480,14 +466,7 @@ async def create_schedule(
         )
 
     # 2. Check class exists
-    clazz = (
-        await s.execute(select(Class).where(Class.id == body.class_id))
-    ).scalar_one_or_none()
-    if not clazz:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail=f"Không tìm thấy lớp học phần có ID {body.class_id}",
-        )
+    clazz = await get_or_404(s, Class, body.class_id, detail=f"Không tìm thấy lớp học phần có ID {body.class_id}")
 
     # 3. Check anti-collision room constraint (helper dùng chung với update):
     room_clean = body.room_name.strip()
@@ -543,14 +522,7 @@ async def update_schedule(
         )
 
     if body.class_id is not None and body.class_id != sched.class_id:
-        clazz = (
-            await s.execute(select(Class).where(Class.id == body.class_id))
-        ).scalar_one_or_none()
-        if not clazz:
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail=f"Không tìm thấy lớp học phần có ID {body.class_id}",
-            )
+        clazz = await get_or_404(s, Class, body.class_id, detail=f"Không tìm thấy lớp học phần có ID {body.class_id}")
         sched.class_id = body.class_id
 
     if body.room_name is not None and body.room_name.strip():

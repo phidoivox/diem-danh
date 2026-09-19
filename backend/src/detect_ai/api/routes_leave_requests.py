@@ -4,7 +4,7 @@ from datetime import date, datetime, time, timezone
 from typing import List, Optional
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, UploadFile, status
 from pydantic import BaseModel, ConfigDict, Field
-from sqlalchemy import func, select
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
@@ -15,7 +15,8 @@ from ..models.leave_request import LeaveRequest, LeaveStatus
 from ..models.point_ledger import PointLedger
 from ..models.user import StudentProfile, User
 from ..services.storage_service import upload_leave_proof
-from .deps_auth import require_role
+from .deps_auth import require_teacher, require_student
+from .helpers import get_or_404
 
 router = APIRouter()
 
@@ -105,7 +106,7 @@ async def submit_leave_request(
     schedule_id: int = Form(...),
     reason: str = Form(...),
     proof_file: Optional[UploadFile] = File(None),
-    current_user: User = Depends(require_role("STUDENT")),
+    current_user: User = Depends(require_student),
     db: AsyncSession = Depends(get_db),
 ):
     # 1. Kiểm tra schedule tồn tại
@@ -183,7 +184,7 @@ async def submit_leave_request(
     summary="Sinh viên xem danh sách các đơn nghỉ phép của mình",
 )
 async def get_student_leave_requests(
-    current_user: User = Depends(require_role("STUDENT")),
+    current_user: User = Depends(require_student),
     db: AsyncSession = Depends(get_db),
 ):
     stmt = (
@@ -213,7 +214,7 @@ async def get_teacher_leave_requests(
     class_id: Optional[int] = Query(None, description="Lọc theo lớp học phần"),
     page: int = Query(1, ge=1),
     size: int = Query(20, ge=1, le=100),
-    current_user: User = Depends(require_role("TEACHER")),
+    current_user: User = Depends(require_teacher),
     db: AsyncSession = Depends(get_db),
 ):
     # Lấy các đơn nghỉ phép thuộc lớp do current_user phụ trách
@@ -232,22 +233,17 @@ async def get_teacher_leave_requests(
         if norm_status in LeaveStatus.__members__:
             stmt = stmt.where(LeaveRequest.status == LeaveStatus[norm_status])
 
-    # Count total
-    count_stmt = select(func.count()).select_from(stmt.subquery())
-    total = (await db.execute(count_stmt)).scalar() or 0
+    # Count total + paginate (helper dùng chung toàn codebase)
+    from ..core.pagination import paginate_stmt
 
-    # Paginate and load relations
     stmt = (
         stmt.options(
             selectinload(LeaveRequest.schedule).selectinload(Schedule.clazz),
             selectinload(LeaveRequest.student).selectinload(User.student_profile),
         )
         .order_by(LeaveRequest.created_at.desc())
-        .offset((page - 1) * size)
-        .limit(size)
     )
-    res = await db.execute(stmt)
-    leaves = res.scalars().all()
+    leaves, total = await paginate_stmt(db, stmt, page, size)
 
     return LeaveRequestPage(
         items=[LeaveRequestResponse(**format_leave_request(l)) for l in leaves],
@@ -265,10 +261,13 @@ async def get_teacher_leave_requests(
 async def review_leave_request(
     id: int,
     payload: ReviewLeaveRequestSchema,
-    current_user: User = Depends(require_role("TEACHER")),
+    current_user: User = Depends(require_teacher),
     db: AsyncSession = Depends(get_db),
 ):
-    # 1. Tìm đơn nghỉ phép kèm lịch học và lớp học phần
+    # 1. 404 cho khóa đơn qua get_or_404 (giữ nguyên message), rồi nạp eager
+    # schedule.clazz + student.student_profile bằng đúng query cũ để giữ
+    # nguyên nghiệp vụ duyệt (async cấm lazy-load sau commit).
+    await get_or_404(db, LeaveRequest, id, detail="Đơn nghỉ phép không tồn tại")
     stmt = (
         select(LeaveRequest)
         .options(
@@ -277,13 +276,7 @@ async def review_leave_request(
         )
         .where(LeaveRequest.id == id)
     )
-    res = await db.execute(stmt)
-    leave_req = res.scalar_one_or_none()
-    if not leave_req:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Đơn nghỉ phép không tồn tại",
-        )
+    leave_req = (await db.execute(stmt)).scalar_one()
 
     # 2. Kiểm tra quyền sở hữu lớp học phần
     class_obj = leave_req.schedule.clazz if leave_req.schedule else None

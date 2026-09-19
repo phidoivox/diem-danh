@@ -16,18 +16,30 @@ from ..services.report_service import (
     calculate_class_exam_ban,
     generate_excel_exam_ban,
 )
-from .deps_auth import require_role
+from .deps_auth import require_teacher
+from .helpers import get_or_404
 
 router = APIRouter(
     prefix="/api/v1/teacher",
     tags=["teacher"],
-    dependencies=[Depends(require_role("TEACHER"))],
+    dependencies=[Depends(require_teacher)],
 )
 
 
 # =====================================================================
 # SCHEMAS
 # =====================================================================
+class ScheduleBrief(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    study_date: date
+    start_time: str
+    end_time: str
+    room_name: str
+    session_order: int
+
+
 class TeacherClassResponse(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
@@ -38,6 +50,7 @@ class TeacherClassResponse(BaseModel):
     semester: str
     total_sessions: int
     student_count: int
+    today_schedule: Optional[ScheduleBrief] = None
 
 
 class StudentAttendanceLiveItem(BaseModel):
@@ -100,7 +113,7 @@ class AttendanceDetailResponse(BaseModel):
     summary="Danh sách các lớp học phần do giảng viên đang đăng nhập phụ trách",
 )
 async def get_teacher_classes(
-    current_user: User = Depends(require_role("TEACHER")),
+    current_user: User = Depends(require_teacher),
     db: AsyncSession = Depends(get_db),
 ):
     stmt = (
@@ -116,8 +129,36 @@ async def get_teacher_classes(
     result = await db.execute(stmt)
     rows = result.all()
 
+    # Lấy tiết dạy hôm nay (nếu có) của các lớp này
+    today = date.today()
+    sched_stmt = (
+        select(Schedule)
+        .join(Class, Class.id == Schedule.class_id)
+        .where(Class.teacher_id == current_user.id, Schedule.study_date == today)
+        .order_by(Schedule.start_time)
+    )
+    sched_rows = (await db.execute(sched_stmt)).scalars().all()
+    today_sched_by_class: Dict[int, Schedule] = {}
+    for s in sched_rows:
+        if s.class_id not in today_sched_by_class:
+            today_sched_by_class[s.class_id] = s
+
     items = []
     for clazz, count in rows:
+        today_s = today_sched_by_class.get(clazz.id)
+        today_sched = None
+        if today_s:
+            st_str = today_s.start_time.strftime("%H:%M") if hasattr(today_s.start_time, "strftime") else str(today_s.start_time)
+            et_str = today_s.end_time.strftime("%H:%M") if hasattr(today_s.end_time, "strftime") else str(today_s.end_time)
+            today_sched = ScheduleBrief(
+                id=today_s.id,
+                study_date=today_s.study_date,
+                start_time=st_str,
+                end_time=et_str,
+                room_name=today_s.room_name,
+                session_order=today_s.session_order,
+            )
+
         items.append(
             TeacherClassResponse(
                 id=clazz.id,
@@ -127,6 +168,7 @@ async def get_teacher_classes(
                 semester=clazz.semester,
                 total_sessions=clazz.total_sessions,
                 student_count=count,
+                today_schedule=today_sched,
             )
         )
     return items
@@ -139,7 +181,7 @@ async def get_teacher_classes(
 )
 async def get_class_live_attendance(
     class_id: int,
-    current_user: User = Depends(require_role("TEACHER")),
+    current_user: User = Depends(require_teacher),
     db: AsyncSession = Depends(get_db),
 ):
     class_obj = await db.get(Class, class_id)
@@ -278,7 +320,7 @@ async def get_class_live_attendance(
 async def manual_override_attendance(
     attendance_id: int,
     body: ManualOverrideRequest,
-    current_user: User = Depends(require_role("TEACHER")),
+    current_user: User = Depends(require_teacher),
     db: AsyncSession = Depends(get_db),
 ):
     att = None
@@ -355,7 +397,7 @@ async def manual_override_attendance(
 )
 async def get_class_exam_ban_report(
     class_id: int,
-    current_user: User = Depends(require_role("TEACHER")),
+    current_user: User = Depends(require_teacher),
     db: AsyncSession = Depends(get_db),
 ):
     class_obj = await db.get(Class, class_id)
@@ -386,15 +428,10 @@ async def get_class_exam_ban_report(
 )
 async def export_class_exam_ban_excel(
     class_id: int,
-    current_user: User = Depends(require_role("TEACHER")),
+    current_user: User = Depends(require_teacher),
     db: AsyncSession = Depends(get_db),
 ):
-    class_obj = await db.get(Class, class_id)
-    if not class_obj:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Không tìm thấy lớp học phần",
-        )
+    class_obj = await get_or_404(db, Class, class_id, detail="Không tìm thấy lớp học phần")
 
     if class_obj.teacher_id != current_user.id:
         raise HTTPException(
