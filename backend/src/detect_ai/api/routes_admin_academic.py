@@ -9,29 +9,42 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from ..core.deps import get_db
+from ..core.pagination import paginate_stmt
 from ..models.academic import Class, ClassStudent, Schedule
 from ..models.user import Role, StudentProfile, User
-from .deps_auth import require_role
+from .deps_auth import require_admin
+from .dto import ClassResponse, build_class_response
 
-router = APIRouter(dependencies=[Depends(require_role("ADMIN"))])
+router = APIRouter(dependencies=[Depends(require_admin)])
+
+
+async def check_room_conflict(
+    s: AsyncSession,
+    room_name: str,
+    study_date: date,
+    start_time: time,
+    end_time: time,
+    exclude_schedule_id: Optional[int] = None,
+) -> Optional[Schedule]:
+    """Một helper duy nhất cho chống trùng phòng (create + update dùng chung).
+
+    Overlap <=> existing.start < new_end AND existing.end > new_start.
+    Update truyền exclude_schedule_id để không tự trùng với chính mình.
+    """
+    stmt = select(Schedule).where(
+        Schedule.room_name == room_name,
+        Schedule.study_date == study_date,
+        Schedule.start_time < end_time,
+        Schedule.end_time > start_time,
+    )
+    if exclude_schedule_id is not None:
+        stmt = stmt.where(Schedule.id != exclude_schedule_id)
+    return (await s.execute(stmt)).scalars().first()
 
 
 # =====================================================================
 # SCHEMAS
 # =====================================================================
-class ClassResponse(BaseModel):
-    model_config = ConfigDict(from_attributes=True)
-
-    id: int
-    class_code: str
-    course_name: str
-    teacher_id: int
-    teacher_name: str
-    semester: str
-    total_sessions: int
-    student_count: int
-
-
 class ClassPage(BaseModel):
     items: List[ClassResponse]
     total: int
@@ -94,6 +107,15 @@ class ScheduleCreateRequest(BaseModel):
     session_order: int = Field(1, ge=1)
 
 
+class ScheduleUpdateRequest(BaseModel):
+    class_id: Optional[int] = None
+    room_name: Optional[str] = None
+    study_date: Optional[date] = None
+    start_time: Optional[time] = None
+    end_time: Optional[time] = None
+    session_order: Optional[int] = None
+
+
 # =====================================================================
 # CLASSES CRUD
 # =====================================================================
@@ -120,36 +142,30 @@ async def list_classes(
             )
         )
 
-    count_stmt = select(func.count()).select_from(stmt.subquery())
-    total = (await s.execute(count_stmt)).scalar() or 0
+    classes, total = await paginate_stmt(
+        s, stmt.order_by(Class.id.desc()), page, size,
+    )
 
-    offset = (page - 1) * size
-    query = stmt.order_by(Class.id.desc()).offset(offset).limit(size)
-    result = await s.execute(query)
-    classes = result.scalars().all()
+    # Đếm sĩ số 1 query cho cả trang (GROUP BY) thay N+1 query từng lớp.
+    class_ids = [c.id for c in classes]
+    counts: dict[int, int] = {}
+    if class_ids:
+        rows = (
+            await s.execute(
+                select(ClassStudent.class_id, func.count(ClassStudent.student_id))
+                .where(ClassStudent.class_id.in_(class_ids))
+                .group_by(ClassStudent.class_id)
+            )
+        ).all()
+        counts = {cid: cnt for cid, cnt in rows}
 
     # Calculate student count for each class
     items = []
     for c in classes:
-        # count enrolled students
-        cnt_res = await s.execute(
-            select(func.count(ClassStudent.student_id)).where(ClassStudent.class_id == c.id)
-        )
-        student_cnt = cnt_res.scalar() or 0
+        student_cnt = counts.get(c.id, 0)
 
         teacher_name = c.teacher.full_name if c.teacher else ""
-        items.append(
-            ClassResponse(
-                id=c.id,
-                class_code=c.class_code,
-                course_name=c.course_name,
-                teacher_id=c.teacher_id,
-                teacher_name=teacher_name,
-                semester=c.semester,
-                total_sessions=c.total_sessions,
-                student_count=student_cnt,
-            )
-        )
+        items.append(build_class_response(c, teacher_name, student_cnt))
 
     return ClassPage(items=items, total=total, page=page, size=size)
 
@@ -251,6 +267,11 @@ async def update_class(
         clazz.semester = body.semester.strip()
 
     if body.total_sessions is not None:
+        if body.total_sessions < 1:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail="total_sessions phải >= 1",
+            )
         clazz.total_sessions = body.total_sessions
 
     await s.commit()
@@ -468,17 +489,11 @@ async def create_schedule(
             detail=f"Không tìm thấy lớp học phần có ID {body.class_id}",
         )
 
-    # 3. Check anti-collision room constraint:
-    # Overlap condition: NOT (existing.end_time <= new_start OR existing.start_time >= new_end)
-    # Equivalent to: existing.start_time < new_end AND existing.end_time > new_start
+    # 3. Check anti-collision room constraint (helper dùng chung với update):
     room_clean = body.room_name.strip()
-    conflict_stmt = select(Schedule).where(
-        Schedule.room_name == room_clean,
-        Schedule.study_date == body.study_date,
-        Schedule.start_time < body.end_time,
-        Schedule.end_time > body.start_time,
+    conflicting = await check_room_conflict(
+        s, room_clean, body.study_date, body.start_time, body.end_time
     )
-    conflicting = (await s.execute(conflict_stmt)).scalars().first()
     if conflicting:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
@@ -507,6 +522,88 @@ async def create_schedule(
         start_time=new_schedule.start_time,
         end_time=new_schedule.end_time,
         session_order=new_schedule.session_order,
+    )
+
+
+@router.put("/schedules/{schedule_id}", response_model=ScheduleResponse)
+async def update_schedule(
+    schedule_id: int,
+    body: ScheduleUpdateRequest,
+    s: AsyncSession = Depends(get_db),
+):
+    sched = (
+        await s.execute(
+            select(Schedule).options(selectinload(Schedule.clazz)).where(Schedule.id == schedule_id)
+        )
+    ).scalar_one_or_none()
+    if not sched:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Không tìm thấy lịch học có ID {schedule_id}",
+        )
+
+    if body.class_id is not None and body.class_id != sched.class_id:
+        clazz = (
+            await s.execute(select(Class).where(Class.id == body.class_id))
+        ).scalar_one_or_none()
+        if not clazz:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"Không tìm thấy lớp học phần có ID {body.class_id}",
+            )
+        sched.class_id = body.class_id
+
+    if body.room_name is not None and body.room_name.strip():
+        sched.room_name = body.room_name.strip()
+    if body.study_date is not None:
+        sched.study_date = body.study_date
+    if body.start_time is not None:
+        sched.start_time = body.start_time
+    if body.end_time is not None:
+        sched.end_time = body.end_time
+    if body.session_order is not None:
+        if body.session_order < 1:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail="session_order phải >= 1",
+            )
+        sched.session_order = body.session_order
+
+    # 1. Check time order (trên giá trị sau khi gộp)
+    if sched.start_time >= sched.end_time:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="start_time phải nhỏ hơn end_time",
+        )
+
+    # 2. Check anti-collision room constraint, LOẠI TRỪ chính buổi đang sửa
+    # (nếu không, mọi lần sửa — kể cả không đổi giờ — đều tự báo trùng với chính nó)
+    conflicting = await check_room_conflict(
+        s, sched.room_name, sched.study_date, sched.start_time, sched.end_time,
+        exclude_schedule_id=schedule_id,
+    )
+    if conflicting:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Phòng học {sched.room_name} đã có lịch học trong khung giờ này!",
+        )
+
+    await s.commit()
+    await s.refresh(sched)
+
+    clazz = sched.clazz or (
+        await s.execute(select(Class).where(Class.id == sched.class_id))
+    ).scalar_one_or_none()
+    return ScheduleResponse(
+        id=sched.id,
+        class_id=sched.class_id,
+        class_code=clazz.class_code if clazz else None,
+        course_name=clazz.course_name if clazz else None,
+        room_name=sched.room_name,
+        study_date=sched.study_date,
+        start_time=sched.start_time,
+        end_time=sched.end_time,
+        session_order=sched.session_order,
     )
 
 

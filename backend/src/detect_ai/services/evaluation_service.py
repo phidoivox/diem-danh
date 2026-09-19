@@ -10,8 +10,8 @@ from ..models.academic import ClassStudent, Schedule
 from ..models.attendance_v2 import Attendance, AttendanceStatus
 from ..models.leave_request import LeaveRequest, LeaveStatus
 from ..models.point_ledger import PointLedger
-from ..models.system_setting import SystemSetting
 from ..models.user import StudentProfile
+from .settings_repo import as_bool, as_int, load_settings_map
 
 
 async def run_nightly_evaluation(
@@ -29,32 +29,24 @@ async def run_nightly_evaluation(
     logger.info(f"Running nightly evaluation for target_date={target_date}")
 
     # 1. Read system settings
-    stmt_settings = select(SystemSetting)
-    settings_rows = (await session.execute(stmt_settings)).scalars().all()
-    settings_map = {row.key: row.value for row in settings_rows}
+    settings_map = await load_settings_map(session)
 
-    def get_int_setting(key: str, default: int) -> int:
-        val = settings_map.get(key)
-        if val is not None:
-            try:
-                return int(val)
-            except ValueError:
-                pass
-        return default
+    point_full = as_int(settings_map, "POINT_FULL_ATTENDANCE", 2)
+    point_late = as_int(settings_map, "POINT_LATE", -1)
+    point_half_absence = as_int(settings_map, "POINT_HALF_ABSENCE", -2)
+    point_absence_without_leave = as_int(settings_map, "POINT_ABSENCE_WITHOUT_LEAVE", -5)
+    point_uniform_violation = as_int(settings_map, "POINT_UNIFORM_VIOLATION", -2)
+    late_tolerance_minutes = as_int(settings_map, "LATE_TOLERANCE_MINUTES", 15)
+    require_checkout = as_bool(settings_map, "REQUIRE_CHECKOUT", True)
 
-    def get_bool_setting(key: str, default: bool) -> bool:
-        val = settings_map.get(key)
-        if val is not None:
-            return val.strip().lower() in ("true", "1", "yes", "t")
-        return default
-
-    point_full = get_int_setting("POINT_FULL_ATTENDANCE", 2)
-    point_late = get_int_setting("POINT_LATE", -1)
-    point_half_absence = get_int_setting("POINT_HALF_ABSENCE", -2)
-    point_absence_without_leave = get_int_setting("POINT_ABSENCE_WITHOUT_LEAVE", -5)
-    point_uniform_violation = get_int_setting("POINT_UNIFORM_VIOLATION", -2)
-    late_tolerance_minutes = get_int_setting("LATE_TOLERANCE_MINUTES", 15)
-    require_checkout = get_bool_setting("REQUIRE_CHECKOUT", True)
+    # Bảng quy đổi trạng thái -> điểm (thay if/elif 5 nhánh lặp 2 lần).
+    POINT_MAP = {
+        AttendanceStatus.PRESENT: point_full,
+        AttendanceStatus.LATE: point_late,
+        AttendanceStatus.HALF_ABSENT: point_half_absence,
+        AttendanceStatus.ABSENT: point_absence_without_leave,
+        AttendanceStatus.EXCUSED: 0,
+    }
 
     # 2. Query schedules for target_date
     stmt_schedules = (
@@ -107,45 +99,44 @@ async def run_nightly_evaluation(
         sched_start_dt = datetime.combine(sched.study_date, sched.start_time)
         late_deadline = sched_start_dt + timedelta(minutes=late_tolerance_minutes)
 
+        # Bulk fetch: 1 query profiles + 1 query approved-leaves cho cả buổi
+        # (thay N+1 query trong loop từng sinh viên).
+        uneval_ids = [att.student_id for att in unevaluated_attendances]
+        profiles = (
+            (await session.execute(
+                select(StudentProfile).where(StudentProfile.user_id.in_(uneval_ids))
+            )).scalars().all()
+        )
+        profile_by_student = {p.user_id: p for p in profiles}
+        approved_ids = set(
+            (await session.execute(
+                select(LeaveRequest.student_id).where(
+                    LeaveRequest.schedule_id == sched.id,
+                    LeaveRequest.student_id.in_(uneval_ids),
+                    LeaveRequest.status == LeaveStatus.APPROVED,
+                )
+            )).scalars().all()
+        )
+
         for att in unevaluated_attendances:
-            # Query student profile for updating points
-            stmt_sp = select(StudentProfile).where(StudentProfile.user_id == att.student_id)
-            profile = (await session.execute(stmt_sp)).scalar_one_or_none()
+            profile = profile_by_student.get(att.student_id)
 
             point_delta = 0
 
             # Rule 1: Respect manual override by teacher
             if att.is_manual_override:
-                status = att.status
-                if status == AttendanceStatus.PRESENT:
-                    point_delta = point_full
-                elif status == AttendanceStatus.LATE:
-                    point_delta = point_late
-                elif status == AttendanceStatus.HALF_ABSENT:
-                    point_delta = point_half_absence
-                elif status == AttendanceStatus.ABSENT:
-                    point_delta = point_absence_without_leave
-                elif status == AttendanceStatus.EXCUSED:
-                    point_delta = 0
-
+                point_delta = POINT_MAP.get(att.status, 0)
                 # Uniform violation applies if has_uniform is False and status != EXCUSED
-                if not att.has_uniform and status != AttendanceStatus.EXCUSED:
+                if not att.has_uniform and att.status != AttendanceStatus.EXCUSED:
                     point_delta += point_uniform_violation
 
             else:
-                # Rule 2: Check approved leave requests
-                stmt_leave = select(LeaveRequest).where(
-                    LeaveRequest.schedule_id == sched.id,
-                    LeaveRequest.student_id == att.student_id,
-                    LeaveRequest.status == LeaveStatus.APPROVED,
-                )
-                approved_leave = (await session.execute(stmt_leave)).scalar_one_or_none()
-
-                if approved_leave:
+                # Rule 2: Check approved leave requests (đã bulk-fetch ở trên)
+                if att.student_id in approved_ids:
                     att.status = AttendanceStatus.EXCUSED
                     point_delta = 0
                 else:
-                    # Rule 3: Auto-inference from Kiosk scan
+                    # Rule 3: Auto-inference from check-in/check-out records
                     if att.check_in_time is not None:
                         cin = att.check_in_time
                         cin_naive = (
