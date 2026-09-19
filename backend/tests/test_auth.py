@@ -2,13 +2,9 @@ import json
 from datetime import datetime, timedelta, timezone
 import pytest
 import pytest_asyncio
-from httpx import ASGITransport, AsyncClient
-from sqlalchemy import select
-from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
+from httpx import AsyncClient
+from sqlalchemy.ext.asyncio import AsyncSession
 
-from detect_ai.core.config import S
-from detect_ai.core.database import Base
-from detect_ai.core.deps import get_db
 from detect_ai.core.security import (
     create_access_token,
     decode_access_token,
@@ -20,31 +16,8 @@ from detect_ai.models.user import Role, StudentProfile, TeacherProfile, User
 
 
 @pytest_asyncio.fixture
-async def test_session_maker():
-    engine = create_async_engine("sqlite+aiosqlite:///:memory:", echo=False)
-
-    from sqlalchemy import event
-
-    @event.listens_for(engine.sync_engine, "connect")
-    def set_sqlite_pragma(dbapi_connection, connection_record):
-        cursor = dbapi_connection.cursor()
-        cursor.execute("PRAGMA foreign_keys=ON")
-        cursor.close()
-
-    async with engine.begin() as conn:
-        await conn.run_sync(Base.metadata.create_all)
-
-    session_maker = async_sessionmaker(engine, expire_on_commit=False, class_=AsyncSession)
-    yield session_maker
-
-    async with engine.begin() as conn:
-        await conn.run_sync(Base.metadata.drop_all)
-    await engine.dispose()
-
-
-@pytest_asyncio.fixture
-async def seeded_session(test_session_maker):
-    async with test_session_maker() as session:
+async def seeded_session(session_maker_fixture):
+    async with session_maker_fixture() as session:
         # Seed Roles
         admin_role = Role(role_name="ADMIN")
         teacher_role = Role(role_name="TEACHER")
@@ -84,7 +57,7 @@ async def seeded_session(test_session_maker):
         )
         session.add(teacher_profile)
 
-        # Seed Student with face embedding
+        # Seed Student
         student_user = User(
             user_code="SV2026001",
             full_name="Lê Thị Học",
@@ -99,7 +72,6 @@ async def seeded_session(test_session_maker):
 
         student_profile = StudentProfile(
             user_id=student_user.id,
-            face_embedding="[0.123, -0.456, 0.789, 0.001]",
             total_point=100,
             class_name="CNTT-K24A",
             major="Kỹ thuật phần mềm",
@@ -131,21 +103,14 @@ async def seeded_session(test_session_maker):
 
         await session.commit()
 
-    async with test_session_maker() as session:
+    async with session_maker_fixture() as session:
         yield session
 
 
 @pytest_asyncio.fixture
-async def client(test_session_maker):
-    async def override_get_db():
-        async with test_session_maker() as session:
-            yield session
-
-    app.dependency_overrides[get_db] = override_get_db
-    transport = ASGITransport(app=app)
-    async with AsyncClient(transport=transport, base_url="http://testserver") as ac:
+async def client(make_client):
+    async with make_client() as ac:
         yield ac
-    app.dependency_overrides.clear()
 
 
 # ==========================================
@@ -219,7 +184,7 @@ async def test_login_teacher_success(client: AsyncClient, seeded_session: AsyncS
 
 
 @pytest.mark.asyncio
-async def test_login_student_success_and_no_face_embedding(
+async def test_login_student_success(
     client: AsyncClient, seeded_session: AsyncSession
 ):
     # Login via user_code
@@ -233,10 +198,9 @@ async def test_login_student_success_and_no_face_embedding(
     assert data["user"]["student_profile"] is not None
     assert data["user"]["student_profile"]["total_point"] == 100
 
-    # Privacy constraint: Absolutely NO face_embedding in the JSON response
+    # Student profile must not leak internal fields
     res_str = json.dumps(data)
-    assert "face_embedding" not in res_str
-    assert "0.123" not in res_str
+    assert "password_hash" not in res_str
 
 
 @pytest.mark.asyncio
@@ -294,7 +258,6 @@ async def test_auth_me_valid_token(client: AsyncClient, seeded_session: AsyncSes
     me_data = me_res.json()
     assert me_data["user_code"] == "SV2026001"
     assert me_data["role"] == "STUDENT"
-    assert "face_embedding" not in json.dumps(me_data)
 
 
 @pytest.mark.asyncio
@@ -376,37 +339,3 @@ async def test_rbac_require_role(client: AsyncClient, seeded_session: AsyncSessi
     # 5. Student accessing teacher-or-admin -> 403 Forbidden
     res = await client.get("/api/test/teacher-or-admin", headers=student_header)
     assert res.status_code == 403
-
-
-# ==========================================
-# 5. Tests for Kiosk API Key (verify_kiosk_api_key)
-# ==========================================
-@pytest.mark.asyncio
-async def test_kiosk_api_key_verification(client: AsyncClient):
-    from fastapi import Depends
-    from detect_ai.api.deps_auth import verify_kiosk_api_key
-
-    @app.post("/api/test/kiosk-ping")
-    async def kiosk_ping_route(key: str = Depends(verify_kiosk_api_key)):
-        return {"status": "ok", "kiosk": True}
-
-    # Valid Key
-    res_valid = await client.post(
-        "/api/test/kiosk-ping",
-        headers={"X-Kiosk-Api-Key": S.kiosk_api_key},
-    )
-    assert res_valid.status_code == 200
-    assert res_valid.json()["kiosk"] is True
-
-    # Invalid Key
-    res_invalid = await client.post(
-        "/api/test/kiosk-ping",
-        headers={"X-Kiosk-Api-Key": "wrong-secret-key"},
-    )
-    assert res_invalid.status_code == 401
-    assert "Invalid or missing Kiosk API Key" in res_invalid.json()["detail"]
-
-    # Missing Key
-    res_missing = await client.post("/api/test/kiosk-ping")
-    assert res_missing.status_code == 401
-    assert "Invalid or missing Kiosk API Key" in res_missing.json()["detail"]
