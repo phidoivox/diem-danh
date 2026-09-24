@@ -106,6 +106,7 @@ export default function AdminAcademicPage() {
   const [classToDelete, setClassToDelete] = useState<AdminClass | null>(null);
   const [studentToRemove, setStudentToRemove] = useState<{ id: number; code: string } | null>(null);
   const [scheduleToDelete, setScheduleToDelete] = useState<AdminSchedule | null>(null);
+  const [feedbackMsg, setFeedbackMsg] = useState<{ type: "success" | "error"; text: string } | null>(null);
 
   const invalidateClasses = () =>
     queryClient.invalidateQueries({ queryKey: ["admin-classes"] });

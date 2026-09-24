@@ -13,7 +13,7 @@ interface AppShellProps {
 export function AppShell({ children }: AppShellProps) {
   const pathname = usePathname();
   const router = useRouter();
-  const { isAuthenticated, isLoading, role } = useAuth();
+  const { isAuthenticated, isLoading } = useAuth();
   const [sidebarOpen, setSidebarOpen] = useState(false);
 
   const isStandalonePage =
@@ -29,6 +29,7 @@ export function AppShell({ children }: AppShellProps) {
 
   // Đóng drawer khi pathname đổi (điều hướng mobile)
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     setSidebarOpen(false);
   }, [pathname]);
 
