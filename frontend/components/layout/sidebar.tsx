@@ -37,7 +37,17 @@ export function Sidebar({ open = false, onClose, onNavigate }: SidebarProps) {
   const router = useRouter();
   const { user, role, logout } = useAuth();
 
+  const handleClose = () => {
+    if (typeof document !== "undefined" && document.activeElement instanceof HTMLElement) {
+      document.activeElement.blur();
+    }
+    onClose?.();
+  };
+
   const handleLogout = () => {
+    if (typeof document !== "undefined" && document.activeElement instanceof HTMLElement) {
+      document.activeElement.blur();
+    }
     logout();
     onNavigate?.();
     onClose?.();
@@ -92,7 +102,12 @@ export function Sidebar({ open = false, onClose, onNavigate }: SidebarProps) {
               <Link
                 key={item.href}
                 href={item.href}
-                onClick={() => onNavigate?.()}
+                onClick={() => {
+                  if (typeof document !== "undefined" && document.activeElement instanceof HTMLElement) {
+                    document.activeElement.blur();
+                  }
+                  onNavigate?.();
+                }}
                 className={`flex items-center gap-3 px-3 py-2 rounded-md text-sm transition-colors ${
                   isActive
                     ? "bg-slate-100 text-slate-900 font-medium"
@@ -195,7 +210,7 @@ export function Sidebar({ open = false, onClose, onNavigate }: SidebarProps) {
       {open && (
         <div
           className="fixed inset-0 z-40 bg-slate-900/50 md:hidden"
-          onClick={onClose}
+          onClick={handleClose}
           aria-hidden="true"
         />
       )}
@@ -205,7 +220,7 @@ export function Sidebar({ open = false, onClose, onNavigate }: SidebarProps) {
         className={`fixed inset-y-0 left-0 z-50 w-[280px] max-w-[85vw] bg-white transition-transform duration-200 md:hidden flex flex-col border-r border-slate-200 select-none pb-safe ${
           open ? "translate-x-0" : "-translate-x-full"
         }`}
-        aria-hidden={!open}
+        inert={!open ? true : undefined}
       >
         <div className="h-14 border-b border-slate-200 px-4 flex items-center justify-between">
           <div className="flex items-center gap-2.5">
@@ -222,7 +237,7 @@ export function Sidebar({ open = false, onClose, onNavigate }: SidebarProps) {
             </div>
           </div>
           <button
-            onClick={onClose}
+            onClick={handleClose}
             aria-label="Đóng menu"
             className="flex items-center justify-center w-11 h-11 min-w-[44px] min-h-[44px] shrink-0 -mr-2 rounded-md text-slate-500 hover:bg-slate-100 hover:text-slate-900 transition-colors"
           >
