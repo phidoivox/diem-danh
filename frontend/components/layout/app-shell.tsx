@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useEffect } from "react";
+import React, { useEffect, useState } from "react";
 import { usePathname, useRouter } from "next/navigation";
 import { useAuth } from "@/lib/auth-context";
 import { Sidebar } from "./sidebar";
@@ -14,12 +14,11 @@ export function AppShell({ children }: AppShellProps) {
   const pathname = usePathname();
   const router = useRouter();
   const { isAuthenticated, isLoading, role } = useAuth();
+  const [sidebarOpen, setSidebarOpen] = useState(false);
 
   const isStandalonePage =
     pathname === "/login" ||
-    pathname.startsWith("/login/") ||
-    pathname === "/diem-danh" ||
-    pathname.startsWith("/diem-danh/");
+    pathname.startsWith("/login/");
 
   useEffect(() => {
     // If auth state resolved and user is not authenticated on a protected route, redirect to /login
@@ -28,7 +27,24 @@ export function AppShell({ children }: AppShellProps) {
     }
   }, [isLoading, isAuthenticated, isStandalonePage, pathname, router]);
 
-  // For standalone pages (e.g. login, Kiosk mode full screen)
+  // Đóng drawer khi pathname đổi (điều hướng mobile)
+  useEffect(() => {
+    setSidebarOpen(false);
+  }, [pathname]);
+
+  // Lock body scroll khi drawer mobile mở
+  useEffect(() => {
+    if (sidebarOpen) {
+      document.body.style.overflow = "hidden";
+    } else {
+      document.body.style.overflow = "";
+    }
+    return () => {
+      document.body.style.overflow = "";
+    };
+  }, [sidebarOpen]);
+
+  // For standalone pages (e.g. login)
   if (isStandalonePage) {
     return <div className="min-h-screen w-full bg-slate-50">{children}</div>;
   }
@@ -47,11 +63,15 @@ export function AppShell({ children }: AppShellProps) {
 
   // Unified SaaS Shell Layout
   return (
-    <div className="flex h-screen w-screen overflow-hidden bg-slate-50 text-slate-900 font-sans antialiased">
-      <Sidebar />
+    <div className="flex h-[100dvh] w-full overflow-hidden bg-slate-50 text-slate-900 font-sans antialiased">
+      <Sidebar
+        open={sidebarOpen}
+        onClose={() => setSidebarOpen(false)}
+        onNavigate={() => setSidebarOpen(false)}
+      />
       <div className="flex flex-col flex-1 min-w-0 h-full overflow-hidden">
-        <Topbar />
-        <main className="flex-1 overflow-y-auto p-6 bg-slate-50">
+        <Topbar onMenuClick={() => setSidebarOpen(true)} />
+        <main className="flex-1 overflow-y-auto p-3 sm:p-5 lg:p-8 bg-slate-50 pb-safe">
           {children}
         </main>
       </div>

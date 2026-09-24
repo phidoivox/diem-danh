@@ -2,11 +2,11 @@
 
 import React from "react";
 import Link from "next/link";
-import { usePathname } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 import { useAuth } from "@/lib/auth-context";
+import { UserAvatar } from "@/components/ui/user-avatar";
 import {
   Calendar,
-  CheckSquare,
   Award,
   FileText,
   BookOpen,
@@ -16,10 +16,8 @@ import {
   Layers,
   Settings,
   BarChart3,
-  Camera,
-  Shield,
-  GraduationCap,
-  Briefcase,
+  LogOut,
+  X,
 } from "lucide-react";
 
 interface NavItem {
@@ -28,13 +26,41 @@ interface NavItem {
   icon: React.ComponentType<{ className?: string; size?: number }>;
 }
 
-export function Sidebar() {
+interface SidebarProps {
+  open?: boolean;
+  onClose?: () => void;
+  onNavigate?: () => void;
+}
+
+export function Sidebar({ open = false, onClose, onNavigate }: SidebarProps) {
   const pathname = usePathname();
-  const { user, role } = useAuth();
+  const router = useRouter();
+  const { user, role, logout } = useAuth();
+
+  const handleLogout = () => {
+    logout();
+    onNavigate?.();
+    onClose?.();
+    router.push("/login");
+  };
+
+  // Trạng thái online/offline của phiên hiện tại theo kết nối mạng trình duyệt.
+  const [isOnline, setIsOnline] = React.useState<boolean>(() =>
+    typeof navigator === "undefined" ? true : navigator.onLine
+  );
+  React.useEffect(() => {
+    const goOnline = () => setIsOnline(true);
+    const goOffline = () => setIsOnline(false);
+    window.addEventListener("online", goOnline);
+    window.addEventListener("offline", goOffline);
+    return () => {
+      window.removeEventListener("online", goOnline);
+      window.removeEventListener("offline", goOffline);
+    };
+  }, []);
 
   const studentNav: NavItem[] = [
     { href: "/student/schedule", label: "Thời khóa biểu", icon: Calendar },
-    { href: "/student/attendance", label: "Lịch sử điểm danh", icon: CheckSquare },
     { href: "/student/conduct-points", label: "Điểm rèn luyện & Sổ cái", icon: Award },
     { href: "/student/leave-requests", label: "Đơn xin nghỉ phép", icon: FileText },
   ];
@@ -52,10 +78,6 @@ export function Sidebar() {
     { href: "/admin/reports", label: "Báo cáo toàn trường", icon: BarChart3 },
   ];
 
-  const commonNav: NavItem[] = [
-    { href: "/diem-danh", label: "Điểm danh Kiosk AI", icon: Camera },
-  ];
-
   const renderNavGroup = (title: string, items: NavItem[]) => {
     return (
       <div className="mb-6">
@@ -70,6 +92,7 @@ export function Sidebar() {
               <Link
                 key={item.href}
                 href={item.href}
+                onClick={() => onNavigate?.()}
                 className={`flex items-center gap-3 px-3 py-2 rounded-md text-sm transition-colors ${
                   isActive
                     ? "bg-slate-100 text-slate-900 font-medium"
@@ -86,95 +109,129 @@ export function Sidebar() {
     );
   };
 
-  const getRoleBadge = () => {
+  const getRoleLabel = () => {
     switch (role) {
       case "ADMIN":
-        return (
-          <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[11px] font-medium bg-slate-100 text-slate-700 border border-slate-200">
-            <Shield size={12} />
-            Quản trị viên
-          </span>
-        );
+        return "Quản trị viên";
       case "TEACHER":
-        return (
-          <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[11px] font-medium bg-slate-100 text-slate-700 border border-slate-200">
-            <Briefcase size={12} />
-            Giảng viên
-          </span>
-        );
+        return "Giảng viên";
       case "STUDENT":
-        return (
-          <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[11px] font-medium bg-slate-100 text-slate-700 border border-slate-200">
-            <GraduationCap size={12} />
-            Sinh viên
-          </span>
-        );
+        return "Sinh viên";
       default:
-        return null;
+        return "";
     }
   };
 
+  const brandHeader = (
+    <div className="h-14 border-b border-slate-200 px-4 flex items-center justify-between">
+      <div className="flex items-center gap-2.5">
+        <div className="w-7 h-7 rounded bg-slate-900 flex items-center justify-center text-white font-bold text-xs">
+          SC
+        </div>
+        <div className="flex flex-col">
+          <span className="text-sm font-semibold text-slate-900 tracking-tight leading-none">
+            Smart Classroom
+          </span>
+          <span className="text-[10px] text-slate-500 mt-0.5 font-mono">
+            Học vụ & Điểm danh
+          </span>
+        </div>
+      </div>
+    </div>
+  );
+
+  const navList = (
+    <div className="flex-1 overflow-y-auto px-3 py-4">
+      {role === "STUDENT" && renderNavGroup("Cổng Sinh viên", studentNav)}
+      {role === "TEACHER" && renderNavGroup("Cổng Giảng viên", teacherNav)}
+      {role === "ADMIN" && renderNavGroup("Quản trị Hệ thống", adminNav)}
+    </div>
+  );
+
+  const userRow = user && (
+    <div className="p-3 pb-[max(12px,env(safe-area-inset-bottom))] border-t border-slate-200">
+      <div className="flex items-center gap-2.5 px-1 py-1">
+        <UserAvatar
+          user={user}
+          size="sm"
+          showStatusDot={false}
+          presence={isOnline ? "online" : "offline"}
+        />
+        <div className="min-w-0 flex-1">
+          <p
+            className="text-[13px] font-medium text-slate-800 truncate leading-tight"
+            title={user.full_name}
+          >
+            {user.full_name}
+          </p>
+          <p className="text-[11px] text-slate-500 truncate mt-px">
+            {user.user_code}
+            {getRoleLabel() && ` · ${getRoleLabel()}`}
+            {user.student_profile && ` · ${user.student_profile.total_point}đ`}
+          </p>
+        </div>
+        <button
+          onClick={handleLogout}
+          title="Đăng xuất"
+          aria-label="Đăng xuất"
+          className="flex shrink-0 items-center justify-center w-9 h-9 rounded-md border border-slate-200 text-slate-500 transition-colors hover:border-rose-200 hover:bg-rose-50 hover:text-rose-700"
+        >
+          <LogOut size={16} />
+        </button>
+      </div>
+    </div>
+  );
+
   return (
-    <aside className="w-60 min-w-[240px] max-w-[240px] h-screen border-r border-slate-200 bg-white flex flex-col select-none">
-      {/* Brand Header */}
-      <div className="h-14 border-b border-slate-200 px-4 flex items-center justify-between">
-        <div className="flex items-center gap-2.5">
-          <div className="w-7 h-7 rounded bg-slate-900 flex items-center justify-center text-white font-bold text-xs">
-            SC
-          </div>
-          <div className="flex flex-col">
-            <span className="text-sm font-semibold text-slate-900 tracking-tight leading-none">
-              Smart Classroom
-            </span>
-            <span className="text-[10px] text-slate-500 mt-0.5 font-mono">
-              Học vụ & Điểm danh AI
-            </span>
-          </div>
-        </div>
-      </div>
+    <>
+      {/* Desktop: sidebar 240px cố định */}
+      <aside className="hidden md:flex w-60 min-w-[240px] max-w-[240px] shrink-0 h-screen border-r border-slate-200 bg-white flex-col select-none">
+        {brandHeader}
+        {navList}
+        {userRow}
+      </aside>
 
-      {/* Navigation List */}
-      <div className="flex-1 overflow-y-auto px-3 py-4">
-        {role === "STUDENT" && renderNavGroup("Cổng Sinh viên", studentNav)}
-        {role === "TEACHER" && renderNavGroup("Cổng Giảng viên", teacherNav)}
-        {role === "ADMIN" && (
-          <>
-            {renderNavGroup("Quản trị Hệ thống", adminNav)}
-            {renderNavGroup("Xem Cổng Giảng viên", teacherNav)}
-            {renderNavGroup("Xem Cổng Sinh viên", studentNav)}
-          </>
-        )}
-        {renderNavGroup("Thiết bị & Điểm danh", commonNav)}
-      </div>
-
-      {/* Bottom User Card */}
-      {user && (
-        <div className="p-3 border-t border-slate-200 bg-slate-50/60">
-          <div className="flex items-center gap-2.5">
-            <div className="w-8 h-8 rounded-full bg-slate-200 border border-slate-300 flex items-center justify-center text-slate-700 font-medium text-xs">
-              {user.full_name ? user.full_name.charAt(0).toUpperCase() : "U"}
-            </div>
-            <div className="min-w-0 flex-1">
-              <p className="text-xs font-medium text-slate-900 truncate">
-                {user.full_name}
-              </p>
-              <div className="flex items-center gap-1.5 mt-0.5">
-                <span className="text-[11px] font-mono tabular-nums text-slate-500">
-                  {user.user_code}
-                </span>
-              </div>
-            </div>
-          </div>
-          <div className="mt-2 flex items-center justify-between">
-            {getRoleBadge()}
-            {user.student_profile && (
-              <span className="text-[11px] font-mono tabular-nums text-emerald-700 bg-emerald-50 px-1.5 py-0.5 rounded border border-emerald-200">
-                {user.student_profile.total_point}đ
-              </span>
-            )}
-          </div>
-        </div>
+      {/* Mobile: overlay */}
+      {open && (
+        <div
+          className="fixed inset-0 z-40 bg-slate-900/50 md:hidden"
+          onClick={onClose}
+          aria-hidden="true"
+        />
       )}
-    </aside>
+
+      {/* Mobile: drawer */}
+      <aside
+        className={`fixed inset-y-0 left-0 z-50 w-[280px] max-w-[85vw] bg-white transition-transform duration-200 md:hidden flex flex-col border-r border-slate-200 select-none pb-safe ${
+          open ? "translate-x-0" : "-translate-x-full"
+        }`}
+        aria-hidden={!open}
+      >
+        <div className="h-14 border-b border-slate-200 px-4 flex items-center justify-between">
+          <div className="flex items-center gap-2.5">
+            <div className="w-7 h-7 rounded bg-slate-900 flex items-center justify-center text-white font-bold text-xs">
+              SC
+            </div>
+            <div className="flex flex-col">
+              <span className="text-sm font-semibold text-slate-900 tracking-tight leading-none">
+                Smart Classroom
+              </span>
+              <span className="text-[10px] text-slate-500 mt-0.5 font-mono">
+                Học vụ & Điểm danh
+              </span>
+            </div>
+          </div>
+          <button
+            onClick={onClose}
+            aria-label="Đóng menu"
+            className="flex items-center justify-center w-11 h-11 min-w-[44px] min-h-[44px] shrink-0 -mr-2 rounded-md text-slate-500 hover:bg-slate-100 hover:text-slate-900 transition-colors"
+          >
+            <X size={20} />
+          </button>
+        </div>
+        {navList}
+        {userRow}
+      </aside>
+    </>
   );
 }

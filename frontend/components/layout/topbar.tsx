@@ -1,10 +1,8 @@
 "use client";
 
-import React, { useEffect, useState } from "react";
-import { usePathname, useRouter } from "next/navigation";
-import { useAuth } from "@/lib/auth-context";
-import { API } from "@/lib/api";
-import { LogOut, Wifi, WifiOff, ChevronRight } from "lucide-react";
+import React from "react";
+import { usePathname } from "next/navigation";
+import { ChevronRight, Menu } from "lucide-react";
 
 const routeTitleMap: Record<string, { portal: string; title: string }> = {
   "/student/schedule": { portal: "Cổng Sinh viên", title: "Thời khóa biểu" },
@@ -18,37 +16,14 @@ const routeTitleMap: Record<string, { portal: string; title: string }> = {
   "/admin/academic": { portal: "Quản trị viên", title: "Lớp học & Thời khóa biểu" },
   "/admin/settings": { portal: "Cấu hình", title: "Tham số hệ thống" },
   "/admin/reports": { portal: "Quản trị viên", title: "Báo cáo cấm thi toàn trường" },
-  "/diem-danh": { portal: "Kiosk AI", title: "Điểm danh FaceID & Đồng phục" },
 };
 
-export function Topbar() {
+interface TopbarProps {
+  onMenuClick?: () => void;
+}
+
+export function Topbar({ onMenuClick }: TopbarProps) {
   const pathname = usePathname();
-  const router = useRouter();
-  const { user, role, logout } = useAuth();
-  const [isBackendOnline, setIsBackendOnline] = useState<boolean | null>(null);
-
-  useEffect(() => {
-    let isMounted = true;
-    const checkBackend = async () => {
-      try {
-        const res = await fetch(`${API}/docs`, { method: "HEAD", cache: "no-store" });
-        if (isMounted) setIsBackendOnline(res.ok || res.status < 500);
-      } catch {
-        if (isMounted) setIsBackendOnline(false);
-      }
-    };
-    checkBackend();
-    const timer = setInterval(checkBackend, 30000);
-    return () => {
-      isMounted = false;
-      clearInterval(timer);
-    };
-  }, []);
-
-  const handleLogout = () => {
-    logout();
-    router.push("/login");
-  };
 
   const getBreadcrumb = () => {
     // Find matching route or prefix
@@ -63,57 +38,19 @@ export function Topbar() {
   const breadcrumb = getBreadcrumb();
 
   return (
-    <header className="h-14 min-h-[56px] border-b border-slate-200 bg-white px-6 flex items-center justify-between select-none">
+    <header className="h-14 min-h-[56px] border-b border-slate-200 bg-white px-4 sm:px-6 flex items-center gap-2 select-none">
       {/* Breadcrumb / Page Title */}
-      <div className="flex items-center gap-2 text-sm">
-        <span className="text-slate-500 font-normal">{breadcrumb.portal}</span>
-        <ChevronRight size={14} className="text-slate-400" />
-        <h1 className="font-semibold text-slate-900 tracking-tight">{breadcrumb.title}</h1>
-      </div>
-
-      {/* Right Controls: Backend status + User info + Logout */}
-      <div className="flex items-center gap-4">
-        {/* Backend health status indicator */}
-        <div className="flex items-center gap-1.5 px-2.5 py-1 rounded text-xs bg-slate-50 border border-slate-200 text-slate-600">
-          <span
-            className={`w-2 h-2 rounded-full ${
-              isBackendOnline === true
-                ? "bg-emerald-500"
-                : isBackendOnline === false
-                ? "bg-rose-500"
-                : "bg-amber-400"
-            }`}
-          />
-          <span className="text-[11px] font-medium hidden sm:inline">
-            {isBackendOnline === true
-              ? "Backend Trực tuyến"
-              : isBackendOnline === false
-              ? "Mất kết nối Backend"
-              : "Đang kiểm tra..."}
-          </span>
-        </div>
-
-        {/* User Summary */}
-        {user && (
-          <div className="hidden md:flex items-center gap-2 text-xs text-slate-700">
-            <span className="font-medium text-slate-900">{user.full_name}</span>
-            <span className="text-slate-400">|</span>
-            <span className="font-mono tabular-nums text-slate-500">{user.user_code}</span>
-            <span className="px-1.5 py-0.5 rounded text-[10px] font-semibold tracking-wider bg-slate-100 text-slate-700 border border-slate-200 uppercase">
-              {role}
-            </span>
-          </div>
-        )}
-
-        {/* Logout Button */}
+      <div className="min-w-0 flex-1 flex items-center gap-2 text-sm">
         <button
-          onClick={handleLogout}
-          className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-md text-xs font-medium text-slate-600 hover:text-rose-700 hover:bg-rose-50 border border-slate-200 hover:border-rose-200 transition-colors"
-          title="Đăng xuất khỏi hệ thống"
+          onClick={onMenuClick}
+          aria-label="Mở menu"
+          className="md:hidden flex items-center justify-center w-11 h-11 min-w-[44px] min-h-[44px] shrink-0 -ml-2 rounded-md text-slate-600 hover:bg-slate-100 hover:text-slate-900 transition-colors"
         >
-          <LogOut size={14} />
-          <span className="hidden sm:inline">Đăng xuất</span>
+          <Menu size={20} />
         </button>
+        <span className="text-slate-500 font-normal hidden sm:inline truncate min-w-0">{breadcrumb.portal}</span>
+        <ChevronRight size={14} className="text-slate-400 shrink-0 hidden sm:inline" />
+        <h1 className="font-semibold text-slate-900 tracking-tight truncate min-w-0">{breadcrumb.title}</h1>
       </div>
     </header>
   );
