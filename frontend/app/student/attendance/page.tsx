@@ -4,19 +4,164 @@ import React, { useState, useMemo } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { RoleGuard } from "@/components/layout/role-guard";
 import { formatTime as formatTimeVN } from "@/lib/date";
-import { getStudentAttendance, StudentAttendance } from "@/lib/api";
+import { getStudentAttendance, StudentAttendance, mediaUrl } from "@/lib/api";
 import {
   CheckSquare,
-  Clock,
   Shirt,
   AlertCircle,
-  Filter,
   RefreshCw,
   Search,
-  CheckCircle2,
   Calendar,
-  Percent,
 } from "lucide-react";
+
+interface AttendanceCardProps {
+  item: StudentAttendance;
+  formatTime: (timeStr?: string | null) => string;
+  renderPointDelta: (pointDelta?: number | null) => React.ReactNode;
+  renderStatusBadge: (status: string) => React.ReactNode;
+}
+
+function AttendanceCard({
+  item,
+  formatTime,
+  renderPointDelta,
+  renderStatusBadge,
+}: AttendanceCardProps) {
+  const timeRange =
+    item.start_time && item.end_time
+      ? `${item.start_time.slice(0, 5)} - ${item.end_time.slice(0, 5)}`
+      : "";
+
+  return (
+    <div className="p-3.5 bg-white rounded-lg border border-slate-200 shadow-xs space-y-3">
+      {/* Header */}
+      <div className="flex items-start justify-between gap-2">
+        <div className="space-y-1 min-w-0">
+          <div className="font-semibold text-sm text-slate-900 leading-snug break-words">
+            {item.course_name}
+          </div>
+          <div className="flex flex-wrap items-center gap-1.5 text-[11px] text-slate-500 font-mono">
+            <span className="bg-slate-100 px-1.5 py-0.5 rounded text-slate-700 font-medium">
+              {item.class_code}
+            </span>
+            <span className="flex items-center gap-1">
+              <Calendar size={12} className="text-slate-400" />
+              <span>{item.study_date}</span>
+            </span>
+            {timeRange && (
+              <>
+                <span className="text-slate-300">·</span>
+                <span>{timeRange}</span>
+              </>
+            )}
+          </div>
+        </div>
+        <div className="shrink-0">{renderStatusBadge(item.status)}</div>
+      </div>
+
+      {/* Micro-grid 2 cột: Check-in / Check-out */}
+      <div className="grid grid-cols-2 gap-2 p-2.5 bg-slate-50 rounded-md border border-slate-100 text-xs font-mono">
+        <div>
+          <span className="text-[10px] font-semibold uppercase tracking-wider text-slate-400 block">
+            Check-in
+          </span>
+          <div className="mt-0.5 font-medium tabular-nums">
+            {item.check_in_time ? (
+              <span className="text-emerald-700 font-medium">
+                {formatTime(item.check_in_time)}
+              </span>
+            ) : (
+              <span className="text-slate-400">--:--</span>
+            )}
+          </div>
+        </div>
+        <div>
+          <span className="text-[10px] font-semibold uppercase tracking-wider text-slate-400 block">
+            Check-out
+          </span>
+          <div className="mt-0.5 font-medium tabular-nums">
+            {item.check_out_time ? (
+              <span className="text-slate-700 font-medium">
+                {formatTime(item.check_out_time)}
+              </span>
+            ) : (
+              <span className="text-slate-400">--:--</span>
+            )}
+          </div>
+        </div>
+      </div>
+
+      {/* Footer / Thông tin bổ sung */}
+      <div className="flex flex-wrap items-center justify-between gap-2 pt-2 border-t border-slate-100 text-xs">
+        {/* Uniform badge & Snapshots */}
+        <div className="flex items-center gap-2">
+          {item.has_uniform ? (
+            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[11px] font-medium bg-emerald-50 text-emerald-700 border border-emerald-200">
+              <Shirt size={12} />
+              Đúng quy định
+            </span>
+          ) : (
+            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[11px] font-medium bg-rose-50 text-rose-700 border border-rose-200">
+              <AlertCircle size={12} />
+              Vi phạm
+            </span>
+          )}
+
+          {(item.check_in_snapshot_url || item.check_out_snapshot_url) && (
+            <div className="flex items-center gap-1">
+              {item.check_in_snapshot_url && (
+                <a
+                  href={mediaUrl(item.check_in_snapshot_url)}
+                  target="_blank"
+                  rel="noreferrer"
+                  title="Ảnh check-in"
+                >
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img
+                    src={mediaUrl(item.check_in_snapshot_url)}
+                    alt="check-in"
+                    className="w-7 h-7 rounded object-cover border border-emerald-200"
+                    loading="lazy"
+                  />
+                </a>
+              )}
+              {item.check_out_snapshot_url && (
+                <a
+                  href={mediaUrl(item.check_out_snapshot_url)}
+                  target="_blank"
+                  rel="noreferrer"
+                  title="Ảnh check-out"
+                >
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img
+                    src={mediaUrl(item.check_out_snapshot_url)}
+                    alt="check-out"
+                    className="w-7 h-7 rounded object-cover border border-sky-200"
+                    loading="lazy"
+                  />
+                </a>
+              )}
+            </div>
+          )}
+        </div>
+
+        {/* Điểm bị trừ */}
+        <div className="flex items-center gap-1.5 ml-auto">
+          <span className="text-[11px] text-slate-500">Điểm:</span>
+          {renderPointDelta(item.point_delta)}
+        </div>
+      </div>
+
+      {/* Ghi chú nếu có */}
+      {item.note && (
+        <div className="text-xs text-slate-600 bg-slate-50/70 p-2 rounded border border-slate-100 italic">
+          <span className="font-medium text-slate-500 not-italic mr-1">Ghi chú:</span>
+          {item.note}
+        </div>
+      )}
+    </div>
+  );
+}
 
 export default function StudentAttendancePage() {
   const queryClient = useQueryClient();
@@ -24,7 +169,11 @@ export default function StudentAttendancePage() {
     queryKey: ["student-attendance"],
     queryFn: getStudentAttendance,
   });
-  const attendances: StudentAttendance[] = attendanceQuery.data ?? [];
+  const rawAttendances = attendanceQuery.data;
+  const attendances: StudentAttendance[] = useMemo(
+    () => rawAttendances ?? [],
+    [rawAttendances]
+  );
   const loading = attendanceQuery.isPending;
   const error = attendanceQuery.isError
     ? attendanceQuery.error instanceof Error
@@ -57,6 +206,7 @@ export default function StudentAttendancePage() {
     let excused = 0;
     let absent = 0;
     let uniformViolations = 0;
+    let totalDeducted = 0;
 
     attendances.forEach((a) => {
       if (a.status === "PRESENT") present++;
@@ -65,6 +215,10 @@ export default function StudentAttendancePage() {
       else if (a.status === "ABSENT" || a.status === "HALF_ABSENT") absent++;
 
       if (!a.has_uniform) uniformViolations++;
+
+      if (typeof a.point_delta === "number" && a.point_delta < 0) {
+        totalDeducted += Math.abs(a.point_delta);
+      }
     });
 
     const attendanceRate =
@@ -72,7 +226,7 @@ export default function StudentAttendancePage() {
         ? Math.round(((present + excused + late * 0.5) / total) * 100)
         : 100;
 
-    return { total, present, late, excused, absent, uniformViolations, attendanceRate };
+    return { total, present, late, excused, absent, uniformViolations, attendanceRate, totalDeducted };
   }, [attendances]);
 
   // Filtered rows
@@ -106,6 +260,31 @@ export default function StudentAttendancePage() {
     } catch {
       return timeStr;
     }
+  };
+
+  const renderPointDelta = (pointDelta?: number | null) => {
+    if (pointDelta === undefined || pointDelta === null) {
+      return <span className="text-slate-300">—</span>;
+    }
+    if (pointDelta > 0) {
+      return (
+        <span className="inline-flex items-center px-2 py-0.5 rounded text-[11px] font-semibold font-mono tabular-nums bg-emerald-50 text-emerald-700 border border-emerald-200 whitespace-nowrap">
+          +{pointDelta}
+        </span>
+      );
+    }
+    if (pointDelta === 0) {
+      return (
+        <span className="inline-flex items-center px-2 py-0.5 rounded text-[11px] font-medium font-mono tabular-nums bg-slate-100 text-slate-600 border border-slate-200 whitespace-nowrap">
+          0
+        </span>
+      );
+    }
+    return (
+      <span className="inline-flex items-center px-2 py-0.5 rounded text-[11px] font-semibold font-mono tabular-nums bg-rose-50 text-rose-700 border border-rose-200 whitespace-nowrap">
+        {pointDelta}
+      </span>
+    );
   };
 
   const renderStatusBadge = (status: string) => {
@@ -151,7 +330,7 @@ export default function StudentAttendancePage() {
 
   return (
     <RoleGuard allowedRoles={["STUDENT", "ADMIN"]}>
-      <div className="space-y-6">
+      <div className="space-y-4 sm:space-y-6 max-w-7xl mx-auto">
         {/* Page Header */}
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-4 border-b border-slate-200">
           <div>
@@ -165,7 +344,7 @@ export default function StudentAttendancePage() {
           <button
             onClick={fetchAttendance}
             disabled={loading}
-            className="h-8 px-3 rounded-md text-xs font-medium border border-slate-200 bg-white text-slate-700 hover:bg-slate-50 transition-colors inline-flex items-center gap-1.5 shadow-sm self-start sm:self-auto"
+            className="h-10 sm:h-8 px-3 rounded-md text-xs font-medium border border-slate-200 bg-white text-slate-700 hover:bg-slate-50 transition-colors inline-flex items-center justify-center gap-1.5 shadow-sm self-start sm:self-auto"
           >
             <RefreshCw size={13} className={loading ? "animate-spin" : ""} />
             <span>Làm mới</span>
@@ -231,17 +410,17 @@ export default function StudentAttendancePage() {
         </div>
 
         {/* Filter Toolbar */}
-        <div className="p-3 bg-white rounded-lg border border-slate-200 shadow-sm flex flex-wrap items-center justify-between gap-3">
-          <div className="flex flex-wrap items-center gap-3">
+        <div className="p-3 bg-white rounded-lg border border-slate-200 shadow-sm flex flex-col sm:flex-row sm:flex-wrap sm:items-center justify-between gap-2.5 sm:gap-3">
+          <div className="flex flex-col sm:flex-row sm:flex-wrap items-stretch sm:items-center gap-2 sm:gap-3 w-full sm:w-auto">
             {/* Search */}
-            <div className="relative w-44 sm:w-56">
-              <Search size={14} className="absolute left-2.5 top-2.5 text-slate-400" />
+            <div className="relative w-full sm:w-56">
+              <Search size={14} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
               <input
                 type="text"
                 placeholder="Tìm môn, mã lớp, ngày..."
                 value={searchTerm}
                 onChange={(e) => setSearchTerm(e.target.value)}
-                className="w-full h-8 pl-8 pr-3 rounded-md border border-slate-200 text-xs text-slate-800 placeholder:text-slate-400 bg-white focus:outline-none focus:ring-1 focus:ring-slate-900"
+                className="w-full h-10 sm:h-8 pl-8 pr-3 rounded-md border border-slate-200 text-xs text-slate-800 placeholder:text-slate-400 bg-white focus:outline-none focus:ring-1 focus:ring-slate-900"
               />
             </div>
 
@@ -249,7 +428,7 @@ export default function StudentAttendancePage() {
             <select
               value={courseFilter}
               onChange={(e) => setCourseFilter(e.target.value)}
-              className="h-8 px-2.5 rounded-md border border-slate-200 text-xs text-slate-700 bg-white focus:outline-none focus:ring-1 focus:ring-slate-900"
+              className="w-full sm:w-auto h-10 sm:h-8 px-2.5 rounded-md border border-slate-200 text-xs text-slate-700 bg-white focus:outline-none focus:ring-1 focus:ring-slate-900"
             >
               <option value="ALL">Tất cả môn học ({uniqueCourses.length})</option>
               {uniqueCourses.map((c) => (
@@ -263,7 +442,7 @@ export default function StudentAttendancePage() {
             <select
               value={statusFilter}
               onChange={(e) => setStatusFilter(e.target.value)}
-              className="h-8 px-2.5 rounded-md border border-slate-200 text-xs text-slate-700 bg-white focus:outline-none focus:ring-1 focus:ring-slate-900"
+              className="w-full sm:w-auto h-10 sm:h-8 px-2.5 rounded-md border border-slate-200 text-xs text-slate-700 bg-white focus:outline-none focus:ring-1 focus:ring-slate-900"
             >
               <option value="ALL">Tất cả trạng thái</option>
               <option value="PRESENT">Có mặt</option>
@@ -274,12 +453,20 @@ export default function StudentAttendancePage() {
             </select>
           </div>
 
-          <div className="text-xs text-slate-500 font-mono">
-            Hiển thị <span className="font-semibold text-slate-900">{filteredAttendances.length}</span> bản ghi
+          <div className="text-xs text-slate-500 font-mono flex items-center justify-between sm:justify-start gap-2 pt-1.5 sm:pt-0 border-t sm:border-t-0 border-slate-100">
+            <span>
+              Hiển thị <span className="font-semibold text-slate-900">{filteredAttendances.length}</span> bản ghi
+            </span>
+            <span className="text-slate-300">·</span>
+            <span>
+              Tổng bị trừ{" "}
+              <span className="font-semibold text-rose-700">-{stats.totalDeducted}</span>{" "}
+              điểm
+            </span>
           </div>
         </div>
 
-        {/* Table Content */}
+        {/* Content Section: Dual-View */}
         <div className="bg-white border border-slate-200 rounded-lg shadow-sm overflow-hidden">
           {loading ? (
             <div className="p-12 text-center">
@@ -299,92 +486,155 @@ export default function StudentAttendancePage() {
               </p>
             </div>
           ) : (
-            <div className="overflow-x-auto">
-              <table className="w-full text-left text-xs">
-                <thead className="bg-slate-50/75 border-b border-slate-200 text-[11px] font-semibold text-slate-500 uppercase tracking-wider">
-                  <tr>
-                    <th className="px-4 py-3">Môn học & Mã lớp</th>
-                    <th className="px-4 py-3">Ngày học</th>
-                    <th className="px-4 py-3 font-mono">Check-in</th>
-                    <th className="px-4 py-3 font-mono">Check-out</th>
-                    <th className="px-4 py-3">Đồng phục</th>
-                    <th className="px-4 py-3">Trạng thái</th>
-                    <th className="px-4 py-3">Ghi chú</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-slate-200 text-slate-700">
-                  {filteredAttendances.map((item) => (
-                    <tr key={item.attendance_id} className="hover:bg-slate-50/70 transition-colors">
-                      {/* Course & Class */}
-                      <td className="px-4 py-3 font-medium text-slate-900">
-                        <div className="font-semibold text-slate-900">{item.course_name}</div>
-                        <div className="text-[11px] text-slate-500 font-mono mt-0.5">
-                          {item.class_code}
-                        </div>
-                      </td>
-
-                      {/* Study Date */}
-                      <td className="px-4 py-3 font-mono tabular-nums text-slate-600">
-                        <div className="flex items-center gap-1.5">
-                          <Calendar size={13} className="text-slate-400" />
-                          <span>{item.study_date}</span>
-                        </div>
-                        <div className="text-[11px] text-slate-400 mt-0.5">
-                          {item.start_time.slice(0, 5)} - {item.end_time.slice(0, 5)}
-                        </div>
-                      </td>
-
-                      {/* Check-in Time */}
-                      <td className="px-4 py-3 font-mono tabular-nums">
-                        {item.check_in_time ? (
-                          <span className="text-emerald-700 font-medium">
-                            {formatTime(item.check_in_time)}
-                          </span>
-                        ) : (
-                          <span className="text-slate-400">--:--</span>
-                        )}
-                      </td>
-
-                      {/* Check-out Time */}
-                      <td className="px-4 py-3 font-mono tabular-nums">
-                        {item.check_out_time ? (
-                          <span className="text-slate-700 font-medium">
-                            {formatTime(item.check_out_time)}
-                          </span>
-                        ) : (
-                          <span className="text-slate-400">--:--</span>
-                        )}
-                      </td>
-
-                      {/* Uniform */}
-                      <td className="px-4 py-3">
-                        {item.has_uniform ? (
-                          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[11px] font-medium bg-emerald-50 text-emerald-700 border border-emerald-200">
-                            <Shirt size={12} />
-                            Đúng quy định
-                          </span>
-                        ) : (
-                          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[11px] font-medium bg-rose-50 text-rose-700 border border-rose-200">
-                            <AlertCircle size={12} />
-                            Vi phạm
-                          </span>
-                        )}
-                      </td>
-
-                      {/* Status */}
-                      <td className="px-4 py-3">
-                        {renderStatusBadge(item.status)}
-                      </td>
-
-                      {/* Note */}
-                      <td className="px-4 py-3 text-slate-500 max-w-xs truncate">
-                        {item.note || "--"}
-                      </td>
+            <>
+              {/* Desktop Table View */}
+              <div className="hidden md:block overflow-x-auto">
+                <table className="w-full text-left text-xs">
+                  <thead className="bg-slate-50/75 border-b border-slate-200 text-[11px] font-semibold text-slate-500 uppercase tracking-wider">
+                    <tr>
+                      <th className="px-4 py-3">Môn học & Mã lớp</th>
+                      <th className="px-4 py-3">Ngày học</th>
+                      <th className="px-4 py-3 font-mono">Check-in</th>
+                      <th className="px-4 py-3 font-mono hidden md:table-cell">Check-out</th>
+                      <th className="px-4 py-3 hidden md:table-cell">Ảnh</th>
+                      <th className="px-4 py-3">Đồng phục</th>
+                      <th className="px-4 py-3">Trạng thái</th>
+                      <th className="px-4 py-3 text-center whitespace-nowrap">Điểm bị trừ</th>
+                      <th className="px-4 py-3 hidden md:table-cell">Ghi chú</th>
                     </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
+                  </thead>
+                  <tbody className="divide-y divide-slate-200 text-slate-700">
+                    {filteredAttendances.map((item) => (
+                      <tr key={item.attendance_id} className="hover:bg-slate-50/70 transition-colors">
+                        {/* Course & Class */}
+                        <td className="px-4 py-3 font-medium text-slate-900">
+                          <div className="font-semibold text-slate-900">{item.course_name}</div>
+                          <div className="text-[11px] text-slate-500 font-mono mt-0.5">
+                            {item.class_code}
+                          </div>
+                        </td>
+
+                        {/* Study Date */}
+                        <td className="px-4 py-3 font-mono tabular-nums text-slate-600">
+                          <div className="flex items-center gap-1.5">
+                            <Calendar size={13} className="text-slate-400" />
+                            <span>{item.study_date}</span>
+                          </div>
+                          <div className="text-[11px] text-slate-400 mt-0.5">
+                            {item.start_time.slice(0, 5)} - {item.end_time.slice(0, 5)}
+                          </div>
+                        </td>
+
+                        {/* Check-in Time */}
+                        <td className="px-4 py-3 font-mono tabular-nums">
+                          {item.check_in_time ? (
+                            <span className="text-emerald-700 font-medium">
+                              {formatTime(item.check_in_time)}
+                            </span>
+                          ) : (
+                            <span className="text-slate-400">--:--</span>
+                          )}
+                        </td>
+
+                        {/* Check-out Time */}
+                        <td className="px-4 py-3 font-mono tabular-nums hidden md:table-cell">
+                          {item.check_out_time ? (
+                            <span className="text-slate-700 font-medium">
+                              {formatTime(item.check_out_time)}
+                            </span>
+                          ) : (
+                            <span className="text-slate-400">--:--</span>
+                          )}
+                        </td>
+
+                        {/* Snapshots check-in/out (thư mục local) */}
+                        <td className="px-4 py-3 hidden md:table-cell">
+                          <div className="flex items-center gap-1">
+                            {item.check_in_snapshot_url ? (
+                              <a
+                                href={mediaUrl(item.check_in_snapshot_url)}
+                                target="_blank"
+                                rel="noreferrer"
+                                title="Ảnh check-in"
+                              >
+                                {/* eslint-disable-next-line @next/next/no-img-element */}
+                                <img
+                                  src={mediaUrl(item.check_in_snapshot_url)}
+                                  alt="check-in"
+                                  className="w-9 h-9 rounded object-cover border border-emerald-200"
+                                  loading="lazy"
+                                />
+                              </a>
+                            ) : (
+                              <span className="text-slate-300 text-xs">--</span>
+                            )}
+                            {item.check_out_snapshot_url ? (
+                              <a
+                                href={mediaUrl(item.check_out_snapshot_url)}
+                                target="_blank"
+                                rel="noreferrer"
+                                title="Ảnh check-out"
+                              >
+                                {/* eslint-disable-next-line @next/next/no-img-element */}
+                                <img
+                                  src={mediaUrl(item.check_out_snapshot_url)}
+                                  alt="check-out"
+                                  className="w-9 h-9 rounded object-cover border border-sky-200"
+                                  loading="lazy"
+                                />
+                              </a>
+                            ) : null}
+                          </div>
+                        </td>
+
+                        {/* Uniform */}
+                        <td className="px-4 py-3">
+                          {item.has_uniform ? (
+                            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[11px] font-medium bg-emerald-50 text-emerald-700 border border-emerald-200">
+                              <Shirt size={12} />
+                              Đúng quy định
+                            </span>
+                          ) : (
+                            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[11px] font-medium bg-rose-50 text-rose-700 border border-rose-200">
+                              <AlertCircle size={12} />
+                              Vi phạm
+                            </span>
+                          )}
+                        </td>
+
+                        {/* Status */}
+                        <td className="px-4 py-3">
+                          {renderStatusBadge(item.status)}
+                        </td>
+
+                        {/* Điểm bị trừ */}
+                        <td className="px-4 py-3 text-center">
+                          {renderPointDelta(item.point_delta)}
+                        </td>
+
+                        {/* Note */}
+                        <td className="px-4 py-3 text-slate-500 max-w-xs truncate hidden md:table-cell">
+                          {item.note || "--"}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+
+              {/* Mobile Card Feed View */}
+              <div className="md:hidden space-y-3 p-3">
+                {filteredAttendances.map((item) => (
+                  <AttendanceCard
+                    key={item.attendance_id}
+                    item={item}
+                    formatTime={formatTime}
+                    renderPointDelta={renderPointDelta}
+                    renderStatusBadge={renderStatusBadge}
+                  />
+                ))}
+              </div>
+            </>
           )}
         </div>
       </div>
