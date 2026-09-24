@@ -1,18 +1,23 @@
 "use client";
 
-import React, { useState, useEffect, useMemo, useRef } from "react";
+import React, { useState, useMemo } from "react";
 import { useParams, useRouter } from "next/navigation";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import Link from "next/link";
 import { RoleGuard } from "@/components/layout/role-guard";
 import {
   getTeacherLiveAttendance,
-  LiveAttendanceResponse,
   LiveAttendanceStudent,
 } from "@/lib/api";
+import { formatTime as formatTimeVN } from "@/lib/date";
 import {
   ManualOverrideModal,
   OverrideTarget,
 } from "@/components/teacher/manual-override-modal";
+import {
+  AttendanceHistoryModal,
+  HistoryTarget,
+} from "@/components/teacher/attendance-history-modal";
 import {
   ArrowLeft,
   Users,
@@ -23,13 +28,12 @@ import {
   Radio,
   RefreshCw,
   Search,
-  ShieldCheck,
-  ShieldAlert,
   Edit3,
   Calendar,
   MapPin,
   FileCheck,
-  Sparkles,
+  ClipboardCheck,
+  History,
 } from "lucide-react";
 
 export default function TeacherLiveAttendancePage() {
@@ -37,15 +41,8 @@ export default function TeacherLiveAttendancePage() {
   const router = useRouter();
   const classId = Number(params?.id);
 
-  const [liveData, setLiveData] = useState<LiveAttendanceResponse | null>(null);
-  const [loading, setLoading] = useState<boolean>(true);
-  const [refreshing, setRefreshing] = useState<boolean>(false);
-  const [error, setError] = useState<string | null>(null);
-
-  // Auto-refresh 5s
+  // Auto-refresh 5s qua react-query (thay setInterval+timerRef tay).
   const [autoRefresh, setAutoRefresh] = useState<boolean>(true);
-  const [lastUpdated, setLastUpdated] = useState<Date>(new Date());
-  const timerRef = useRef<NodeJS.Timeout | null>(null);
 
   // Filtering & Search
   const [searchQuery, setSearchQuery] = useState<string>("");
@@ -55,45 +52,28 @@ export default function TeacherLiveAttendancePage() {
   const [overrideTarget, setOverrideTarget] = useState<OverrideTarget | null>(null);
   const [isOverrideModalOpen, setIsOverrideModalOpen] = useState<boolean>(false);
 
-  const fetchLiveAttendance = async (isBackground = false) => {
-    if (!classId || isNaN(classId)) return;
-    try {
-      if (!isBackground) setLoading(true);
-      else setRefreshing(true);
-      setError(null);
+  // Modal lịch sử điểm danh từng SV
+  const [historyTarget, setHistoryTarget] = useState<HistoryTarget | null>(null);
+  const [isHistoryModalOpen, setIsHistoryModalOpen] = useState<boolean>(false);
 
-      const data = await getTeacherLiveAttendance(classId);
-      setLiveData(data);
-      setLastUpdated(new Date());
-    } catch (err: any) {
-      if (!isBackground) {
-        setError(err?.message || "Không thể tải dữ liệu điểm danh thời gian thực.");
-      }
-    } finally {
-      setLoading(false);
-      setRefreshing(false);
-    }
-  };
+  const queryClient = useQueryClient();
+  const liveQuery = useQuery({
+    queryKey: ["teacher-live", classId],
+    queryFn: () => getTeacherLiveAttendance(classId),
+    enabled: !!classId && !isNaN(classId),
+    refetchInterval: autoRefresh ? 5000 : false,
+  });
+  const liveData = liveQuery.data ?? null;
+  const loading = liveQuery.isPending;
+  const refreshing = liveQuery.isFetching && !liveQuery.isPending;
+  const error = liveQuery.isError
+    ? liveQuery.error instanceof Error
+      ? liveQuery.error.message
+      : "Không thể tải dữ liệu điểm danh thời gian thực."
+    : null;
+  const lastUpdated = liveQuery.dataUpdatedAt ? new Date(liveQuery.dataUpdatedAt) : new Date();
 
-  useEffect(() => {
-    fetchLiveAttendance();
-  }, [classId]);
-
-  // Handle Auto-Refresh interval
-  useEffect(() => {
-    if (!autoRefresh) {
-      if (timerRef.current) clearInterval(timerRef.current);
-      return;
-    }
-
-    timerRef.current = setInterval(() => {
-      fetchLiveAttendance(true);
-    }, 5000);
-
-    return () => {
-      if (timerRef.current) clearInterval(timerRef.current);
-    };
-  }, [autoRefresh, classId]);
+  const refetchLive = () => queryClient.invalidateQueries({ queryKey: ["teacher-live", classId] });
 
   // Open modal handler
   const handleOpenOverride = (st: LiveAttendanceStudent) => {
@@ -107,6 +87,17 @@ export default function TeacherLiveAttendancePage() {
       scheduleId: liveData?.schedule_id || null,
     });
     setIsOverrideModalOpen(true);
+  };
+
+  // Open history modal handler
+  const handleOpenHistory = (st: LiveAttendanceStudent) => {
+    setHistoryTarget({
+      studentId: st.student_id,
+      studentCode: st.student_code,
+      studentName: st.full_name,
+      className: st.class_name,
+    });
+    setIsHistoryModalOpen(true);
   };
 
   // Filtered students list
@@ -141,11 +132,7 @@ export default function TeacherLiveAttendancePage() {
   const formatTime = (isoString?: string | null) => {
     if (!isoString) return "--:--";
     try {
-      const d = new Date(isoString);
-      const hh = String(d.getHours()).padStart(2, "0");
-      const mm = String(d.getMinutes()).padStart(2, "0");
-      const ss = String(d.getSeconds()).padStart(2, "0");
-      return `${hh}:${mm}:${ss}`;
+      return formatTimeVN(isoString);
     } catch {
       return isoString;
     }
@@ -194,10 +181,10 @@ export default function TeacherLiveAttendancePage() {
 
   return (
     <RoleGuard allowedRoles={["TEACHER"]}>
-      <div className="p-6 max-w-7xl mx-auto space-y-6">
+      <div className="p-4 sm:p-6 max-w-7xl mx-auto space-y-5 sm:space-y-6">
         {/* Navigation & Header */}
-        <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4 border-b border-slate-200 pb-5">
-          <div>
+        <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-3 pb-4 border-b border-slate-200">
+          <div className="min-w-0 flex-1">
             <Link
               href="/teacher/classes"
               className="inline-flex items-center gap-1.5 text-xs font-medium text-slate-500 hover:text-slate-800 transition-colors mb-2"
@@ -206,11 +193,11 @@ export default function TeacherLiveAttendancePage() {
               <span>Quay lại danh sách lớp học phần</span>
             </Link>
 
-            <div className="flex items-center gap-3">
-              <h1 className="text-2xl font-bold text-slate-900 tracking-tight">
+            <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
+              <h1 className="text-xl sm:text-2xl font-bold text-slate-900 tracking-tight break-words leading-tight min-w-0">
                 {liveData ? `${liveData.class_code} - ${liveData.course_name}` : "Điểm danh trực tiếp"}
               </h1>
-              <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-semibold bg-emerald-50 text-emerald-700 border border-emerald-200">
+              <span className="inline-flex shrink-0 whitespace-nowrap items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-semibold bg-emerald-50 text-emerald-700 border border-emerald-200">
                 <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
                 Live Room
               </span>
@@ -218,7 +205,7 @@ export default function TeacherLiveAttendancePage() {
 
             {/* Schedule details bar */}
             {liveData && (
-              <div className="flex flex-wrap items-center gap-4 text-xs text-slate-500 mt-2">
+              <div className="flex flex-wrap items-center gap-x-4 gap-y-1.5 text-xs text-slate-500 mt-2">
                 <div className="flex items-center gap-1.5">
                   <Calendar size={14} className="text-slate-400" />
                   <span>
@@ -251,8 +238,8 @@ export default function TeacherLiveAttendancePage() {
           </div>
 
           {/* Controls: Auto-refresh & Refresh button */}
-          <div className="flex items-center gap-3 self-start md:self-auto">
-            <label className="flex items-center gap-2 px-3 py-1.5 rounded-md border border-slate-200 bg-white cursor-pointer shadow-xs text-xs font-medium text-slate-700 select-none">
+          <div className="flex flex-wrap items-center gap-2 w-full sm:w-auto sm:justify-end shrink-0">
+            <label className="flex flex-1 sm:flex-none items-center justify-center gap-2 px-3 py-1.5 rounded-md border border-slate-200 bg-white cursor-pointer shadow-xs text-xs font-medium text-slate-700 select-none whitespace-nowrap">
               <input
                 type="checkbox"
                 checked={autoRefresh}
@@ -269,9 +256,9 @@ export default function TeacherLiveAttendancePage() {
             </label>
 
             <button
-              onClick={() => fetchLiveAttendance(false)}
+              onClick={() => refetchLive()}
               disabled={loading || refreshing}
-              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium text-slate-700 bg-white hover:bg-slate-50 border border-slate-200 shadow-xs transition-colors disabled:opacity-50"
+              className="inline-flex flex-1 sm:flex-none items-center justify-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium text-slate-700 bg-white hover:bg-slate-50 border border-slate-200 shadow-xs transition-colors disabled:opacity-50 whitespace-nowrap"
               title="Làm mới dữ liệu"
             >
               <RefreshCw
@@ -280,8 +267,36 @@ export default function TeacherLiveAttendancePage() {
               />
               <span>Cập nhật</span>
             </button>
+
+            {liveData && !liveData.schedule_id ? (
+              <span
+                className="inline-flex flex-1 sm:flex-none items-center justify-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-semibold text-white bg-slate-300 cursor-not-allowed whitespace-nowrap"
+                title="Hôm nay lớp không có tiết — kiosk đang đóng"
+              >
+                <span>Mở Kiosk Face</span>
+              </span>
+            ) : (
+              <Link
+                href={`/teacher/classes/${classId}/kiosk`}
+                className="inline-flex flex-1 sm:flex-none items-center justify-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-semibold text-white bg-emerald-600 hover:bg-emerald-700 shadow-xs transition-colors whitespace-nowrap"
+                title="Mở kiosk điểm danh khuôn mặt ở cửa lớp"
+              >
+                <span>Mở Kiosk Face</span>
+              </Link>
+            )}
           </div>
         </div>
+
+        {/* Banner khi ngoài tiết: hôm nay lớp không có buổi học -> kiosk đóng */}
+        {liveData && !liveData.schedule_id && (
+          <div className="p-3 rounded-lg bg-amber-50 border border-amber-200 text-amber-700 text-sm flex items-center gap-2">
+            <Calendar size={15} className="shrink-0" />
+            <span>
+              Hôm nay lớp không có tiết — điểm danh đang đóng. Kiosk khuôn mặt chỉ mở
+              vào ngày có buổi học. Giáo viên vẫn sửa điểm tay được.
+            </span>
+          </div>
+        )}
 
         {/* 4 KPI Cards */}
         {liveData && (
@@ -332,7 +347,7 @@ export default function TeacherLiveAttendancePage() {
                   {liveData.absent_count}
                 </p>
                 <p className="text-[11px] text-rose-600/80 mt-0.5">
-                  Chưa quét FaceID ca này
+                  Chưa điểm danh ca này
                 </p>
               </div>
               <div className="w-10 h-10 rounded-md bg-rose-100 border border-rose-200 flex items-center justify-center text-rose-700">
@@ -361,9 +376,9 @@ export default function TeacherLiveAttendancePage() {
         )}
 
         {/* Toolbar: Search and Filter Tabs */}
-        <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-3 p-3 bg-white rounded-lg border border-slate-200 shadow-sm">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between flex-wrap gap-2 sm:gap-3 p-3 bg-white rounded-lg border border-slate-200 shadow-sm">
           {/* Search box */}
-          <div className="relative flex-1 md:max-w-xs">
+          <div className="relative w-full sm:w-auto flex-1 sm:max-w-xs">
             <Search
               size={15}
               className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400"
@@ -411,7 +426,7 @@ export default function TeacherLiveAttendancePage() {
           <div className="p-4 rounded-lg bg-rose-50 border border-rose-200 text-rose-700 text-sm flex items-center justify-between">
             <span>{error}</span>
             <button
-              onClick={() => fetchLiveAttendance(false)}
+              onClick={() => refetchLive()}
               className="text-xs font-semibold underline hover:no-underline ml-4"
             >
               Thử lại
@@ -436,15 +451,12 @@ export default function TeacherLiveAttendancePage() {
               <table className="w-full text-left text-sm">
                 <thead className="bg-slate-50 border-b border-slate-200 text-xs font-semibold text-slate-600 uppercase tracking-wider">
                   <tr>
-                    <th className="px-4 py-3 w-12 text-center">STT</th>
-                    <th className="px-4 py-3">Mã SV</th>
+                    <th className="sticky left-0 bg-slate-50 z-20 px-4 py-3 w-12 text-center">STT</th>
+                    <th className="sticky left-12 bg-slate-50 z-20 px-4 py-3">Mã SV</th>
                     <th className="px-4 py-3">Họ và tên</th>
-                    <th className="px-4 py-3">Lớp SH</th>
-                    <th className="px-4 py-3">Check-in</th>
-                    <th className="px-4 py-3">Check-out</th>
-                    <th className="px-4 py-3 text-center">Đồng phục</th>
+                    <th className="px-4 py-3 hidden md:table-cell">Lớp SH</th>
                     <th className="px-4 py-3 text-center">Trạng thái</th>
-                    <th className="px-4 py-3 text-center">Nguồn</th>
+                    <th className="px-4 py-3 text-center hidden md:table-cell">Nguồn</th>
                     <th className="px-4 py-3 text-right">Thao tác</th>
                   </tr>
                 </thead>
@@ -452,7 +464,7 @@ export default function TeacherLiveAttendancePage() {
                   {filteredStudents.length === 0 ? (
                     <tr>
                       <td
-                        colSpan={10}
+                        colSpan={7}
                         className="px-4 py-8 text-center text-xs text-slate-400"
                       >
                         Không có sinh viên nào khớp với bộ lọc hiện tại.
@@ -468,43 +480,22 @@ export default function TeacherLiveAttendancePage() {
                             : ""
                         }`}
                       >
-                        <td className="px-4 py-3 text-center text-xs text-slate-400 font-mono tabular-nums">
+                        <td className="sticky left-0 bg-white z-10 px-4 py-3 text-center text-xs text-slate-400 font-mono tabular-nums">
                           {idx + 1}
                         </td>
-                        <td className="px-4 py-3 font-mono tabular-nums text-xs font-semibold text-slate-900">
+                        <td className="sticky left-12 bg-white z-10 px-4 py-3 font-mono tabular-nums text-xs font-semibold text-slate-900">
                           {st.student_code}
                         </td>
                         <td className="px-4 py-3 font-medium text-slate-900">
                           {st.full_name}
                         </td>
-                        <td className="px-4 py-3 text-xs text-slate-500">
+                        <td className="px-4 py-3 text-xs text-slate-500 hidden md:table-cell">
                           {st.class_name || "--"}
-                        </td>
-                        <td className="px-4 py-3 font-mono tabular-nums text-xs text-slate-700">
-                          {formatTime(st.check_in_time)}
-                        </td>
-                        <td className="px-4 py-3 font-mono tabular-nums text-xs text-slate-700">
-                          {formatTime(st.check_out_time)}
-                        </td>
-                        <td className="px-4 py-3 text-center">
-                          {st.status === "ABSENT" ? (
-                            <span className="text-slate-300 text-xs">--</span>
-                          ) : st.has_uniform ? (
-                            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[11px] font-medium bg-emerald-50 text-emerald-700 border border-emerald-200">
-                              <ShieldCheck size={12} />
-                              Đúng chuẩn
-                            </span>
-                          ) : (
-                            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[11px] font-semibold bg-rose-50 text-rose-700 border border-rose-200">
-                              <ShieldAlert size={12} />
-                              Vi phạm
-                            </span>
-                          )}
                         </td>
                         <td className="px-4 py-3 text-center">
                           {renderStatusBadge(st.status)}
                         </td>
-                        <td className="px-4 py-3 text-center">
+                        <td className="px-4 py-3 text-center hidden md:table-cell">
                           {st.is_manual_override ? (
                             <span
                               className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-medium bg-indigo-50 text-indigo-700 border border-indigo-200"
@@ -513,24 +504,43 @@ export default function TeacherLiveAttendancePage() {
                               <Edit3 size={10} />
                               GV sửa
                             </span>
+                          ) : st.source === "face" ? (
+                            <span
+                              className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-medium bg-emerald-50 text-emerald-700 border border-emerald-200"
+                              title="Kiosk điểm danh khuôn mặt tự ghi nhận"
+                            >
+                              <ClipboardCheck size={10} />
+                              Face
+                            </span>
                           ) : st.attendance_id ? (
                             <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-medium bg-slate-100 text-slate-600">
-                              <Sparkles size={10} />
-                              AI Kiosk
+                              <ClipboardCheck size={10} />
+                              GV điểm danh
                             </span>
                           ) : (
                             <span className="text-slate-300 text-xs">--</span>
                           )}
                         </td>
                         <td className="px-4 py-3 text-right">
-                          <button
-                            type="button"
-                            onClick={() => handleOpenOverride(st)}
-                            className="inline-flex items-center gap-1 px-2.5 py-1 rounded text-xs font-medium text-slate-700 bg-white hover:bg-slate-100 border border-slate-200 shadow-2xs transition-colors"
-                          >
-                            <Edit3 size={12} className="text-slate-500" />
-                            <span>Sửa điểm</span>
-                          </button>
+                          <div className="inline-flex items-center gap-1.5">
+                            <button
+                              type="button"
+                              onClick={() => handleOpenHistory(st)}
+                              className="inline-flex items-center gap-1 px-2.5 py-1 rounded text-xs font-medium text-emerald-700 bg-emerald-50 hover:bg-emerald-100 border border-emerald-200 shadow-2xs transition-colors"
+                              title="Xem lịch sử điểm danh của sinh viên trong môn này"
+                            >
+                              <History size={12} />
+                              <span>Lịch sử</span>
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => handleOpenOverride(st)}
+                              className="inline-flex items-center gap-1 px-2.5 py-1 rounded text-xs font-medium text-slate-700 bg-white hover:bg-slate-100 border border-slate-200 shadow-2xs transition-colors"
+                            >
+                              <Edit3 size={12} className="text-slate-500" />
+                              <span>Sửa điểm</span>
+                            </button>
+                          </div>
                         </td>
                       </tr>
                     ))
@@ -549,9 +559,20 @@ export default function TeacherLiveAttendancePage() {
             setOverrideTarget(null);
           }}
           onSuccess={() => {
-            fetchLiveAttendance(true);
+            refetchLive();
           }}
           target={overrideTarget}
+        />
+
+        {/* Attendance History Modal */}
+        <AttendanceHistoryModal
+          isOpen={isHistoryModalOpen}
+          onClose={() => {
+            setIsHistoryModalOpen(false);
+            setHistoryTarget(null);
+          }}
+          classId={classId}
+          target={historyTarget}
         />
       </div>
     </RoleGuard>

@@ -187,9 +187,9 @@ function TeacherReportsContent() {
   };
 
   return (
-    <div className="p-6 max-w-7xl mx-auto space-y-6">
+    <div className="p-4 sm:p-6 max-w-7xl mx-auto space-y-4 sm:space-y-6">
       {/* Header */}
-      <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4 border-b border-slate-200 pb-5">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-4 border-b border-slate-200">
         <div>
           <div className="flex items-center gap-2 text-slate-500 text-xs font-semibold uppercase tracking-wider mb-1">
             <AlertTriangle size={15} />
@@ -204,7 +204,7 @@ function TeacherReportsContent() {
         </div>
 
         {/* Action Controls */}
-        <div className="flex items-center gap-2.5 self-start md:self-auto">
+        <div className="flex flex-wrap items-center gap-2.5 self-start sm:self-auto">
           <button
             type="button"
             onClick={handleExportExcel}
@@ -222,7 +222,7 @@ function TeacherReportsContent() {
       </div>
 
       {/* Class Selector Bar */}
-      <div className="p-4 bg-white rounded-lg border border-slate-200 shadow-sm flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+      <div className="p-4 bg-white rounded-lg border border-slate-200 shadow-sm flex flex-col sm:flex-row items-start sm:items-center justify-between flex-wrap gap-3 sm:gap-4">
         <div className="flex flex-col sm:flex-row sm:items-center gap-3 w-full sm:w-auto">
           <label
             htmlFor="select-class"
@@ -235,7 +235,7 @@ function TeacherReportsContent() {
             value={selectedClassId || ""}
             onChange={(e) => setSelectedClassId(Number(e.target.value))}
             disabled={loadingClasses || classes.length === 0}
-            className="px-3 py-2 text-sm rounded-md border border-slate-200 bg-slate-50 text-slate-900 font-medium focus:outline-none focus:ring-1 focus:ring-slate-400 min-w-[260px]"
+            className="w-full sm:w-auto px-3 py-2 text-sm rounded-md border border-slate-200 bg-slate-50 text-slate-900 font-medium focus:outline-none focus:ring-1 focus:ring-slate-400 sm:min-w-[260px]"
           >
             {classes.map((c) => (
               <option key={c.id} value={c.id}>
@@ -353,8 +353,8 @@ function TeacherReportsContent() {
       </div>
 
       {/* Toolbar: Search and Status filter */}
-      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 p-3 bg-white rounded-lg border border-slate-200 shadow-sm">
-        <div className="relative flex-1 sm:max-w-xs">
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between flex-wrap gap-2 sm:gap-3 p-3 bg-white rounded-lg border border-slate-200 shadow-sm">
+        <div className="relative w-full sm:w-auto flex-1 sm:max-w-xs">
           <Search
             size={15}
             className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400"
@@ -368,7 +368,7 @@ function TeacherReportsContent() {
           />
         </div>
 
-        <div className="flex items-center gap-1 self-start sm:self-auto">
+        <div className="flex flex-wrap items-center gap-1 self-start sm:self-auto">
           {[
             { id: "ALL", label: "Tất cả" },
             { id: "BANNED", label: `Cấm thi (${summary.banned})` },
@@ -408,13 +408,13 @@ function TeacherReportsContent() {
             <table className="w-full text-left text-sm">
               <thead className="bg-slate-50 border-b border-slate-200 text-xs font-semibold text-slate-600 uppercase tracking-wider">
                 <tr>
-                  <th className="px-4 py-3 w-12 text-center">STT</th>
-                  <th className="px-4 py-3">Mã SV</th>
+                  <th className="sticky left-0 bg-slate-50 z-20 px-4 py-3 w-12 text-center">STT</th>
+                  <th className="sticky left-12 bg-slate-50 z-20 px-4 py-3">Mã SV</th>
                   <th className="px-4 py-3">Họ và tên</th>
-                  <th className="px-4 py-3">Lớp SH</th>
+                  <th className="px-4 py-3 hidden md:table-cell">Lớp SH</th>
                   <th className="px-4 py-3 text-center">Vắng (buổi)</th>
-                  <th className="px-4 py-3 text-center">Nửa buổi</th>
-                  <th className="px-4 py-3 text-center">Vắng Q.Đổi (V)</th>
+                  <th className="px-4 py-3 text-center hidden md:table-cell">Nửa buổi</th>
+                  <th className="px-4 py-3 text-center hidden md:table-cell">Vắng Q.Đổi (V)</th>
                   <th className="px-4 py-3 text-center">Vắng Lũy kế (%)</th>
                   <th className="px-4 py-3 text-center">Vắng Cả kỳ (%)</th>
                   <th className="px-4 py-3 text-right">Trạng thái</th>
@@ -448,25 +448,25 @@ function TeacherReportsContent() {
                             : ""
                         }`}
                       >
-                        <td className="px-4 py-3 text-center text-xs text-slate-400 font-mono tabular-nums">
+                        <td className="sticky left-0 bg-white z-10 px-4 py-3 text-center text-xs text-slate-400 font-mono tabular-nums">
                           {idx + 1}
                         </td>
-                        <td className="px-4 py-3 font-mono tabular-nums text-xs font-semibold text-slate-900">
+                        <td className="sticky left-12 bg-white z-10 px-4 py-3 font-mono tabular-nums text-xs font-semibold text-slate-900">
                           {st.student_code}
                         </td>
                         <td className="px-4 py-3 font-medium text-slate-900">
                           {st.full_name}
                         </td>
-                        <td className="px-4 py-3 text-xs text-slate-500">
+                        <td className="px-4 py-3 text-xs text-slate-500 hidden md:table-cell">
                           {st.class_name || "--"}
                         </td>
                         <td className="px-4 py-3 text-center font-mono tabular-nums text-xs text-slate-700">
                           {st.absent_count}
                         </td>
-                        <td className="px-4 py-3 text-center font-mono tabular-nums text-xs text-slate-700">
+                        <td className="px-4 py-3 text-center font-mono tabular-nums text-xs text-slate-700 hidden md:table-cell">
                           {st.half_absent_count}
                         </td>
-                        <td className="px-4 py-3 text-center font-mono tabular-nums text-xs font-semibold text-slate-900">
+                        <td className="px-4 py-3 text-center font-mono tabular-nums text-xs font-semibold text-slate-900 hidden md:table-cell">
                           {convAbsent}
                         </td>
                         <td

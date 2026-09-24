@@ -106,7 +106,7 @@ export default function AdminReportsPage() {
 
   return (
     <RoleGuard allowedRoles={["ADMIN"]}>
-      <div className="space-y-6">
+      <div className="space-y-4 sm:space-y-6 max-w-7xl mx-auto">
         {/* Header */}
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-4 border-b border-slate-200">
           <div>
@@ -217,13 +217,13 @@ export default function AdminReportsPage() {
         {/* Detailed Class Inspection */}
         <div className="bg-white rounded-lg border border-slate-200 shadow-xs overflow-hidden">
           {/* Toolbar */}
-          <div className="p-4 border-b border-slate-200 bg-slate-50/50 flex flex-col md:flex-row md:items-center justify-between gap-3">
-            <div className="flex items-center gap-3">
+          <div className="p-4 border-b border-slate-200 bg-slate-50/50 flex flex-col sm:flex-row sm:items-center justify-between flex-wrap gap-2 sm:gap-3">
+            <div className="flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-3 w-full sm:w-auto">
               <span className="text-xs font-semibold text-slate-700">Xem chi tiết lớp:</span>
               <select
                 value={selectedClassId}
                 onChange={(e) => setSelectedClassId(e.target.value ? Number(e.target.value) : "")}
-                className="px-3 py-1.5 text-xs rounded-md border border-slate-200 bg-white focus:outline-hidden focus:ring-1 focus:ring-slate-900 max-w-sm"
+                className="w-full sm:w-auto px-3 py-1.5 text-xs rounded-md border border-slate-200 bg-white focus:outline-hidden focus:ring-1 focus:ring-slate-900 sm:max-w-sm"
               >
                 {classes.map((c) => (
                   <option key={c.id} value={c.id}>
@@ -234,7 +234,7 @@ export default function AdminReportsPage() {
             </div>
 
             {/* Filter pills */}
-            <div className="flex items-center gap-1.5">
+            <div className="flex flex-wrap items-center gap-1.5">
               <button
                 onClick={() => setStatusFilter("ALL")}
                 className={`px-2.5 py-1 text-xs font-medium rounded-md transition-colors cursor-pointer ${
@@ -291,12 +291,12 @@ export default function AdminReportsPage() {
             <table className="w-full text-left border-collapse">
               <thead>
                 <tr className="bg-slate-50/75 border-b border-slate-200 text-[11px] font-semibold text-slate-500 uppercase tracking-wider">
-                  <th className="px-4 py-3 w-12 text-center">STT</th>
-                  <th className="px-4 py-3">Mã SV</th>
+                  <th className="sticky left-0 bg-slate-50 z-20 px-4 py-3 w-12 text-center">STT</th>
+                  <th className="sticky left-12 bg-slate-50 z-20 px-4 py-3">Mã SV</th>
                   <th className="px-4 py-3">Họ và tên</th>
-                  <th className="px-4 py-3">Lớp SH</th>
-                  <th className="px-4 py-3 text-center">Vắng (buổi)</th>
-                  <th className="px-4 py-3 text-center">Tỷ lệ tích lũy</th>
+                  <th className="px-4 py-3 hidden md:table-cell">Lớp SH</th>
+                  <th className="px-4 py-3 text-center hidden md:table-cell">Vắng (buổi)</th>
+                  <th className="px-4 py-3 text-center hidden md:table-cell">Tỷ lệ tích lũy</th>
                   <th className="px-4 py-3 text-center">Tỷ lệ cả kỳ</th>
                   <th className="px-4 py-3 text-center">Trạng thái thi</th>
                 </tr>
@@ -325,25 +325,25 @@ export default function AdminReportsPage() {
                         st.is_banned ? "bg-rose-50/30" : st.is_warning ? "bg-amber-50/20" : ""
                       }`}
                     >
-                      <td className="px-4 py-3 text-center font-mono tabular-nums text-slate-400">
+                      <td className="sticky left-0 bg-white z-10 px-4 py-3 text-center font-mono tabular-nums text-slate-400">
                         {idx + 1}
                       </td>
-                      <td className="px-4 py-3 font-mono font-medium text-slate-900 tabular-nums">
+                      <td className="sticky left-12 bg-white z-10 px-4 py-3 font-mono font-medium text-slate-900 tabular-nums">
                         {st.student_code}
                       </td>
                       <td className="px-4 py-3 font-medium text-slate-900">
                         {st.full_name}
                       </td>
-                      <td className="px-4 py-3 font-mono text-slate-600">
+                      <td className="px-4 py-3 font-mono text-slate-600 hidden md:table-cell">
                         {st.class_name || "-"}
                       </td>
-                      <td className="px-4 py-3 text-center font-mono tabular-nums">
+                      <td className="px-4 py-3 text-center font-mono tabular-nums hidden md:table-cell">
                         <span className="font-semibold text-slate-800">{st.converted_absent ?? 0}</span>
                         <span className="text-slate-400 text-[11px] ml-1">
                           ({st.absent_count}v + {st.half_absent_count}nửa)
                         </span>
                       </td>
-                      <td className="px-4 py-3 text-center font-mono tabular-nums">
+                      <td className="px-4 py-3 text-center font-mono tabular-nums hidden md:table-cell">
                         <span
                           className={`font-semibold ${
                             st.is_banned
