@@ -2,6 +2,7 @@
 
 import React, { useState, useEffect } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { toast } from "sonner";
 import { RoleGuard } from "@/components/layout/role-guard";
 import {
   AdminClass,
@@ -31,7 +32,6 @@ import {
   Users,
   Clock,
   BookOpen,
-  GraduationCap,
   Loader2,
   X,
   UserPlus,
@@ -102,9 +102,6 @@ export default function AdminAcademicPage() {
   const [isScheduleModalOpen, setIsScheduleModalOpen] = useState(false);
   const [editingSchedule, setEditingSchedule] = useState<AdminSchedule | null>(null);
 
-  // Feedback message
-  const [feedbackMsg, setFeedbackMsg] = useState<{ type: "success" | "error"; text: string } | null>(null);
-
   // ConfirmDialog states (thay window.confirm chặn thread)
   const [classToDelete, setClassToDelete] = useState<AdminClass | null>(null);
   const [studentToRemove, setStudentToRemove] = useState<{ id: number; code: string } | null>(null);
@@ -132,12 +129,11 @@ export default function AdminAcademicPage() {
         ? updateAdminClass(editingClass.id, payload)
         : createAdminClass(payload),
     onSuccess: (_data, payload) => {
-      setFeedbackMsg({
-        type: "success",
-        text: editingClass
+      toast.success(
+        editingClass
           ? `Đã cập nhật lớp học ${payload.class_code}`
-          : "Tạo lớp học phần mới thành công",
-      });
+          : "Tạo lớp học phần mới thành công"
+      );
       setIsCreateClassOpen(false);
       setEditingClass(null);
       setNewClassCode("");
@@ -393,7 +389,7 @@ export default function AdminAcademicPage() {
         )}
 
         {/* Navigation Tabs */}
-        <div className="flex items-center gap-2 border-b border-slate-200">
+        <div className="flex items-center gap-2 border-b border-slate-200 overflow-x-auto">
           <button
             onClick={() => setActiveTab("CLASSES")}
             className={`flex items-center gap-2 px-4 py-2.5 text-xs font-semibold border-b-2 -mb-px transition-colors cursor-pointer ${
@@ -424,8 +420,8 @@ export default function AdminAcademicPage() {
         {activeTab === "CLASSES" && (
           <div className="space-y-3">
             {/* Search toolbar */}
-            <div className="flex items-center justify-between gap-3 bg-white p-3 rounded-lg border border-slate-200 shadow-xs">
-              <div className="relative max-w-sm w-full">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between flex-wrap gap-2 sm:gap-3 bg-white p-3 rounded-lg border border-slate-200 shadow-xs">
+              <div className="relative w-full sm:max-w-sm">
                 <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
                 <input
                   type="text"
@@ -450,8 +446,8 @@ export default function AdminAcademicPage() {
                       <th className="px-4 py-3">Mã lớp</th>
                       <th className="px-4 py-3">Tên môn học</th>
                       <th className="px-4 py-3">Giảng viên phụ trách</th>
-                      <th className="px-4 py-3">Học kỳ</th>
-                      <th className="px-4 py-3 text-center">Số buổi</th>
+                      <th className="px-4 py-3 hidden md:table-cell">Học kỳ</th>
+                      <th className="px-4 py-3 text-center hidden md:table-cell">Số buổi</th>
                       <th className="px-4 py-3 text-center">Sinh viên</th>
                       <th className="px-4 py-3 text-right">Thao tác</th>
                     </tr>
@@ -487,10 +483,10 @@ export default function AdminAcademicPage() {
                           <td className="px-4 py-3 text-slate-700">
                             {c.teacher_name || "Chưa phân công"}
                           </td>
-                          <td className="px-4 py-3 font-mono text-slate-600">
+                          <td className="px-4 py-3 font-mono text-slate-600 hidden md:table-cell">
                             {c.semester}
                           </td>
-                          <td className="px-4 py-3 text-center font-mono tabular-nums text-slate-700">
+                          <td className="px-4 py-3 text-center font-mono tabular-nums text-slate-700 hidden md:table-cell">
                             {c.total_sessions}
                           </td>
                           <td className="px-4 py-3 text-center">
@@ -542,7 +538,7 @@ export default function AdminAcademicPage() {
         {activeTab === "SCHEDULES" && (
           <div className="space-y-3">
             {/* Filter toolbar */}
-            <div className="flex flex-wrap items-center gap-3 bg-white p-3 rounded-lg border border-slate-200 shadow-xs">
+            <div className="flex flex-col sm:flex-row sm:flex-wrap sm:items-center gap-2 sm:gap-3 bg-white p-3 rounded-lg border border-slate-200 shadow-xs">
               <div className="flex items-center gap-1 text-xs text-slate-500 font-medium">
                 <Filter size={14} />
                 Lọc:
@@ -552,7 +548,7 @@ export default function AdminAcademicPage() {
               <select
                 value={filterClassId}
                 onChange={(e) => setFilterClassId(e.target.value ? Number(e.target.value) : "")}
-                className="px-2.5 py-1.5 text-xs rounded-md border border-slate-200 bg-slate-50/50 focus:bg-white focus:outline-hidden focus:ring-1 focus:ring-slate-900"
+                className="w-full sm:w-auto px-2.5 py-1.5 text-xs rounded-md border border-slate-200 bg-slate-50/50 focus:bg-white focus:outline-hidden focus:ring-1 focus:ring-slate-900"
               >
                 <option value="">-- Tất cả lớp --</option>
                 {classes.map((c) => (
@@ -567,7 +563,7 @@ export default function AdminAcademicPage() {
                 type="date"
                 value={filterDate}
                 onChange={(e) => setFilterDate(e.target.value)}
-                className="px-2.5 py-1.5 text-xs font-mono rounded-md border border-slate-200 bg-slate-50/50 focus:bg-white focus:outline-hidden focus:ring-1 focus:ring-slate-900"
+                className="w-full sm:w-auto px-2.5 py-1.5 text-xs font-mono rounded-md border border-slate-200 bg-slate-50/50 focus:bg-white focus:outline-hidden focus:ring-1 focus:ring-slate-900"
               />
 
               {/* Room filter */}
@@ -576,7 +572,7 @@ export default function AdminAcademicPage() {
                 value={filterRoom}
                 onChange={(e) => setFilterRoom(e.target.value)}
                 placeholder="Phòng (VD: A1-301)"
-                className="px-2.5 py-1.5 text-xs font-mono uppercase rounded-md border border-slate-200 bg-slate-50/50 focus:bg-white focus:outline-hidden focus:ring-1 focus:ring-slate-900 max-w-[140px]"
+                className="w-full sm:w-auto px-2.5 py-1.5 text-xs font-mono uppercase rounded-md border border-slate-200 bg-slate-50/50 focus:bg-white focus:outline-hidden focus:ring-1 focus:ring-slate-900 sm:max-w-[140px]"
               />
 
               {(filterClassId || filterDate || filterRoom) && (
@@ -601,8 +597,8 @@ export default function AdminAcademicPage() {
                     <tr className="bg-slate-50 border-b border-slate-200 text-[11px] font-semibold text-slate-500 uppercase tracking-wider">
                       <th className="px-4 py-3 w-12 text-center">Buổi</th>
                       <th className="px-4 py-3">Lớp học phần</th>
-                      <th className="px-4 py-3">Tên môn học</th>
-                      <th className="px-4 py-3">Phòng học</th>
+                      <th className="px-4 py-3 hidden md:table-cell">Tên môn học</th>
+                      <th className="px-4 py-3 hidden md:table-cell">Phòng học</th>
                       <th className="px-4 py-3">Ngày học</th>
                       <th className="px-4 py-3">Khung giờ</th>
                       <th className="px-4 py-3 text-right">Thao tác</th>
@@ -633,10 +629,10 @@ export default function AdminAcademicPage() {
                           <td className="px-4 py-3 font-mono font-medium text-slate-900 tabular-nums">
                             {s.class_code || `Lớp #${s.class_id}`}
                           </td>
-                          <td className="px-4 py-3 font-medium text-slate-900">
+                          <td className="px-4 py-3 font-medium text-slate-900 hidden md:table-cell">
                             {s.course_name || "-"}
                           </td>
-                          <td className="px-4 py-3">
+                          <td className="px-4 py-3 hidden md:table-cell">
                             <span className="inline-flex items-center px-2 py-0.5 rounded text-[11px] font-mono font-semibold bg-indigo-50 text-indigo-700 border border-indigo-200">
                               {s.room_name}
                             </span>
@@ -686,8 +682,8 @@ export default function AdminAcademicPage() {
         {/* ===================================================================== */}
         {isCreateClassOpen && (
           <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 backdrop-blur-xs p-4">
-            <div className="relative w-full max-w-lg bg-white rounded-lg shadow-xl border border-slate-200 overflow-hidden">
-              <div className="flex items-center justify-between px-6 py-4 border-b border-slate-200 bg-slate-50/50">
+            <div className="relative w-full max-w-lg max-h-[90vh] flex flex-col bg-white rounded-lg shadow-xl border border-slate-200 overflow-hidden">
+              <div className="flex items-center justify-between px-6 py-4 border-b border-slate-200 bg-slate-50/50 shrink-0">
                 <h3 className="text-base font-semibold text-slate-900">
                   {editingClass ? `Sửa lớp học phần ${editingClass.class_code}` : "Tạo mới lớp học phần"}
                 </h3>
@@ -702,7 +698,8 @@ export default function AdminAcademicPage() {
                 </button>
               </div>
 
-              <form onSubmit={handleCreateClassSubmit} className="p-6 space-y-4">
+              <form onSubmit={handleCreateClassSubmit} className="flex flex-col min-h-0 flex-1 overflow-hidden">
+                <div className="flex-1 overflow-y-auto overscroll-contain p-6 space-y-4">
                 {createClassError && (
                   <div className="flex items-start gap-2 p-3 text-xs bg-rose-50 border border-rose-200 text-rose-700 rounded-md">
                     <AlertCircle size={15} className="shrink-0 mt-0.5" />
@@ -710,7 +707,7 @@ export default function AdminAcademicPage() {
                   </div>
                 )}
 
-                <div className="grid grid-cols-2 gap-4">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                   <div>
                     <label className="block text-xs font-semibold text-slate-700 mb-1">
                       Mã lớp học phần <span className="text-rose-500">*</span>
@@ -750,7 +747,7 @@ export default function AdminAcademicPage() {
                   />
                 </div>
 
-                <div className="grid grid-cols-2 gap-4">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                   <div>
                     <label className="block text-xs font-semibold text-slate-700 mb-1">
                       Giảng viên phụ trách <span className="text-rose-500">*</span>
@@ -784,7 +781,9 @@ export default function AdminAcademicPage() {
                   </div>
                 </div>
 
-                <div className="flex items-center justify-end gap-3 pt-4 border-t border-slate-200">
+                </div>
+
+                <div className="flex items-center justify-end gap-3 px-6 py-3 border-t border-slate-200 bg-slate-50/50 shrink-0">
                   <button
                     type="button"
                     onClick={() => {
@@ -815,8 +814,8 @@ export default function AdminAcademicPage() {
         {selectedClassForStudents && (
           <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 backdrop-blur-xs p-4">
             <div className="relative w-full max-w-3xl bg-white rounded-lg shadow-xl border border-slate-200 overflow-hidden flex flex-col max-h-[85vh]">
-              {/* Header */}
-              <div className="flex items-center justify-between px-6 py-4 border-b border-slate-200 bg-slate-50/50">
+              {/* Header — cố định */}
+              <div className="flex items-center justify-between px-4 sm:px-6 py-3 sm:py-4 border-b border-slate-200 bg-slate-50/50 shrink-0">
                 <div>
                   <h3 className="text-base font-semibold text-slate-900">
                     Danh sách sinh viên ghi danh
@@ -834,20 +833,20 @@ export default function AdminAcademicPage() {
                 </button>
               </div>
 
-              {/* Add Student Bar */}
-              <div className="p-4 bg-slate-50 border-b border-slate-200 space-y-2">
+              {/* Add Student Bar — cố định */}
+              <div className="p-3 sm:p-4 bg-slate-50 border-b border-slate-200 space-y-2 shrink-0">
                 {studentsModalError && (
                   <div className="flex items-start gap-2 p-2.5 text-xs bg-rose-50 border border-rose-200 text-rose-700 rounded-md">
                     <AlertCircle size={15} className="shrink-0 mt-0.5" />
                     <span>{studentsModalError}</span>
                   </div>
                 )}
-                <div className="flex items-center gap-2">
+                <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2">
                   <div className="flex-1">
                     <select
                       value={selectedStudentToAdd}
                       onChange={(e) => setSelectedStudentToAdd(e.target.value ? Number(e.target.value) : "")}
-                      className="w-full px-3 py-1.5 text-xs rounded-md border border-slate-200 bg-white focus:outline-hidden focus:ring-1 focus:ring-slate-900"
+                      className="w-full px-3 py-2 sm:py-1.5 min-h-[38px] text-xs rounded-md border border-slate-200 bg-white focus:outline-hidden focus:ring-1 focus:ring-slate-900"
                     >
                       <option value="">-- Chọn sinh viên để ghi danh vào lớp --</option>
                       {availableStudents
@@ -862,81 +861,83 @@ export default function AdminAcademicPage() {
                   <button
                     onClick={handleAddStudent}
                     disabled={isAddingStudent || !selectedStudentToAdd}
-                    className="flex items-center gap-1 px-3 py-1.5 text-xs font-medium text-white bg-slate-900 hover:bg-slate-800 rounded-md transition-colors disabled:opacity-50 cursor-pointer"
+                    className="flex items-center justify-center gap-1 px-3 py-2 sm:py-1.5 min-h-[38px] text-xs font-medium text-white bg-slate-900 hover:bg-slate-800 rounded-md transition-colors disabled:opacity-50 cursor-pointer shrink-0"
                   >
                     {isAddingStudent ? <Loader2 size={13} className="animate-spin" /> : <UserPlus size={14} />}
-                    Thêm vào lớp
+                    <span>Thêm vào lớp</span>
                   </button>
                 </div>
               </div>
 
               {/* Student Table */}
-              <div className="overflow-y-auto flex-1 p-4">
-                <table className="w-full text-left border-collapse">
-                  <thead>
-                    <tr className="bg-slate-50 border-b border-slate-200 text-[11px] font-semibold text-slate-500 uppercase tracking-wider">
-                      <th className="px-3 py-2 w-10 text-center">STT</th>
-                      <th className="px-3 py-2">Mã SV</th>
-                      <th className="px-3 py-2">Họ và tên</th>
-                      <th className="px-3 py-2">Lớp SH</th>
-                      <th className="px-3 py-2">Chuyên ngành</th>
-                      <th className="px-3 py-2 text-center">Điểm RL</th>
-                      <th className="px-3 py-2 text-right">Xóa</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-slate-100 text-xs text-slate-700">
-                    {isLoadingStudents ? (
-                      <tr>
-                        <td colSpan={7} className="px-4 py-8 text-center text-slate-400">
-                          <Loader2 size={20} className="animate-spin mx-auto text-slate-400 mb-1" />
-                          Đang tải danh sách...
-                        </td>
+              <div className="overflow-y-auto flex-1 p-3 sm:p-4">
+                <div className="overflow-x-auto [scrollbar-width:thin]">
+                  <table className="w-full min-w-[560px] text-left border-collapse">
+                    <thead>
+                      <tr className="bg-slate-50 border-b border-slate-200 text-[11px] font-semibold text-slate-500 uppercase tracking-wider">
+                        <th className="px-3 py-2 w-10 text-center">STT</th>
+                        <th className="px-3 py-2">Mã SV</th>
+                        <th className="px-3 py-2">Họ và tên</th>
+                        <th className="px-3 py-2">Lớp SH</th>
+                        <th className="px-3 py-2">Chuyên ngành</th>
+                        <th className="px-3 py-2 text-center">Điểm RL</th>
+                        <th className="px-3 py-2 text-right">Xóa</th>
                       </tr>
-                    ) : enrolledStudents.length === 0 ? (
-                      <tr>
-                        <td colSpan={7} className="px-4 py-8 text-center text-slate-400">
-                          Chưa có sinh viên nào ghi danh vào lớp học này
-                        </td>
-                      </tr>
-                    ) : (
-                      enrolledStudents.map((st, idx) => (
-                        <tr key={st.id} className="hover:bg-slate-50">
-                          <td className="px-3 py-2 text-center font-mono tabular-nums text-slate-400">
-                            {idx + 1}
-                          </td>
-                          <td className="px-3 py-2 font-mono font-medium text-slate-900 tabular-nums">
-                            {st.user_code}
-                          </td>
-                          <td className="px-3 py-2 font-medium text-slate-900">
-                            {st.full_name}
-                          </td>
-                          <td className="px-3 py-2 font-mono text-slate-600">
-                            {st.class_name || "-"}
-                          </td>
-                          <td className="px-3 py-2 text-slate-600">
-                            {st.major || "-"}
-                          </td>
-                          <td className="px-3 py-2 text-center font-mono tabular-nums text-emerald-700 font-semibold">
-                            {st.total_point ?? 100}đ
-                          </td>
-                          <td className="px-3 py-2 text-right">
-                            <button
-                              onClick={() => handleRemoveStudent(st.id, st.user_code)}
-                              title="Xóa sinh viên khỏi lớp"
-                              className="p-1 text-rose-600 hover:bg-rose-50 rounded transition-colors cursor-pointer"
-                            >
-                              <Trash2 size={14} />
-                            </button>
+                    </thead>
+                    <tbody className="divide-y divide-slate-100 text-xs text-slate-700">
+                      {isLoadingStudents ? (
+                        <tr>
+                          <td colSpan={7} className="px-4 py-8 text-center text-slate-400">
+                            <Loader2 size={20} className="animate-spin mx-auto text-slate-400 mb-1" />
+                            Đang tải danh sách...
                           </td>
                         </tr>
-                      ))
-                    )}
-                  </tbody>
-                </table>
+                      ) : enrolledStudents.length === 0 ? (
+                        <tr>
+                          <td colSpan={7} className="px-4 py-8 text-center text-slate-400">
+                            Chưa có sinh viên nào ghi danh vào lớp học này
+                          </td>
+                        </tr>
+                      ) : (
+                        enrolledStudents.map((st, idx) => (
+                          <tr key={st.id} className="hover:bg-slate-50">
+                            <td className="px-3 py-2 text-center font-mono tabular-nums text-slate-400">
+                              {idx + 1}
+                            </td>
+                            <td className="px-3 py-2 font-mono font-medium text-slate-900 tabular-nums">
+                              {st.user_code}
+                            </td>
+                            <td className="px-3 py-2 font-medium text-slate-900">
+                              {st.full_name}
+                            </td>
+                            <td className="px-3 py-2 font-mono text-slate-600">
+                              {st.class_name || "-"}
+                            </td>
+                            <td className="px-3 py-2 text-slate-600">
+                              {st.major || "-"}
+                            </td>
+                            <td className="px-3 py-2 text-center font-mono tabular-nums text-emerald-700 font-semibold">
+                              {st.total_point ?? 100}đ
+                            </td>
+                            <td className="px-3 py-2 text-right">
+                              <button
+                                onClick={() => handleRemoveStudent(st.id, st.user_code)}
+                                title="Xóa sinh viên khỏi lớp"
+                                className="p-1 text-rose-600 hover:bg-rose-50 rounded transition-colors cursor-pointer"
+                              >
+                                <Trash2 size={14} />
+                              </button>
+                            </td>
+                          </tr>
+                        ))
+                      )}
+                    </tbody>
+                  </table>
+                </div>
               </div>
 
               {/* Footer */}
-              <div className="flex items-center justify-end px-6 py-3 border-t border-slate-200 bg-slate-50/50">
+              <div className="flex items-center justify-end px-4 sm:px-6 py-3 border-t border-slate-200 bg-slate-50/50">
                 <button
                   onClick={() => setSelectedClassForStudents(null)}
                   className="px-4 py-1.5 text-xs font-medium text-slate-700 bg-white border border-slate-200 rounded-md hover:bg-slate-50 transition-colors cursor-pointer"

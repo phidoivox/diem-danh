@@ -60,6 +60,7 @@ export default function AdminSettingsPage() {
 
   // Nạp settings từ cache query vào form cục bộ khi dữ liệu về.
   useEffect(() => {
+    /* eslint-disable react-hooks/set-state-in-effect -- đồng bộ dữ liệu query vào form */
     const map = settingsQuery.data?.settings || {};
     if (!settingsQuery.data) return;
     if (map["POINT_FULL_ATTENDANCE"]) setPointFullAttendance(map["POINT_FULL_ATTENDANCE"]);
@@ -75,12 +76,14 @@ export default function AdminSettingsPage() {
     if (map["MAX_ABSENCE_PERCENT_EXAM_BAN"])
       setMaxAbsencePercentExamBan(map["MAX_ABSENCE_PERCENT_EXAM_BAN"]);
     if (map["WARNING_ABSENCE_PERCENT"]) setWarningAbsencePercent(map["WARNING_ABSENCE_PERCENT"]);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    /* eslint-enable react-hooks/set-state-in-effect */
   }, [settingsQuery.data]);
 
   useEffect(() => {
+    /* eslint-disable react-hooks/set-state-in-effect */
     if (queryError) setErrorMessage(queryError);
     else setErrorMessage(null);
+    /* eslint-enable react-hooks/set-state-in-effect */
   }, [queryError]);
 
   const fetchSettings = () =>
@@ -145,7 +148,7 @@ export default function AdminSettingsPage() {
 
   return (
     <RoleGuard allowedRoles={["ADMIN"]}>
-      <div className="space-y-6 max-w-5xl">
+      <div className="space-y-4 sm:space-y-6 max-w-5xl">
         {/* Header */}
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-4 border-b border-slate-200">
           <div>
@@ -158,12 +161,12 @@ export default function AdminSettingsPage() {
             </p>
           </div>
 
-          <div className="flex items-center gap-2">
+          <div className="flex flex-wrap items-center gap-2">
             <button
               type="button"
               onClick={fetchSettings}
               disabled={isLoading || isSaving}
-              className="p-2 text-slate-600 hover:text-slate-900 hover:bg-slate-100 rounded-md border border-slate-200 transition-colors cursor-pointer"
+              className="p-2 min-h-[38px] min-w-[38px] flex items-center justify-center text-slate-600 hover:text-slate-900 hover:bg-slate-100 rounded-md border border-slate-200 transition-colors cursor-pointer"
               title="Tải lại cài đặt"
             >
               <RotateCcw size={15} />
@@ -172,7 +175,7 @@ export default function AdminSettingsPage() {
             <button
               onClick={handleSaveSettings}
               disabled={isLoading || isSaving}
-              className="flex items-center gap-1.5 px-4 py-2 text-xs font-medium text-white bg-slate-900 hover:bg-slate-800 rounded-md transition-colors disabled:opacity-50 cursor-pointer shadow-xs"
+              className="flex items-center justify-center gap-1.5 px-4 py-2 min-h-[38px] text-xs font-medium text-white bg-slate-900 hover:bg-slate-800 rounded-md transition-colors disabled:opacity-50 cursor-pointer shadow-xs"
             >
               {isSaving ? (
                 <Loader2 size={14} className="animate-spin" />
@@ -181,7 +184,7 @@ export default function AdminSettingsPage() {
               ) : (
                 <Save size={14} />
               )}
-              {saveSuccess ? "Đã lưu thành công" : "Lưu cấu hình"}
+              <span>{saveSuccess ? "Đã lưu thành công" : "Lưu cấu hình"}</span>
             </button>
           </div>
         </div>
@@ -207,10 +210,10 @@ export default function AdminSettingsPage() {
             <span className="text-xs">Đang nạp tham số hệ thống...</span>
           </div>
         ) : (
-          <form onSubmit={handleSaveSettings} className="space-y-6">
+          <form onSubmit={handleSaveSettings} className="space-y-4 sm:space-y-6">
             {/* SECTION 1: ATTENDANCE CONDUCT POINTS */}
             <div className="bg-white rounded-lg border border-slate-200 shadow-xs overflow-hidden">
-              <div className="px-6 py-4 border-b border-slate-200 bg-slate-50/50 flex items-center gap-2.5">
+              <div className="px-4 sm:px-6 py-4 border-b border-slate-200 bg-slate-50/50 flex items-center gap-2.5">
                 <div className="p-1.5 bg-emerald-50 text-emerald-700 border border-emerald-200 rounded-md">
                   <Award size={16} />
                 </div>
@@ -224,7 +227,7 @@ export default function AdminSettingsPage() {
                 </div>
               </div>
 
-              <div className="p-6 grid grid-cols-1 md:grid-cols-2 gap-5">
+              <div className="p-4 sm:p-6 grid grid-cols-1 sm:grid-cols-2 gap-4 sm:gap-5">
                 {/* POINT_FULL_ATTENDANCE */}
                 <div className="p-3.5 rounded-md border border-slate-200 bg-slate-50/40 space-y-1.5">
                   <div className="flex items-center justify-between">
@@ -236,7 +239,7 @@ export default function AdminSettingsPage() {
                   <p className="text-[11px] text-slate-500">
                     Mã cấu hình: <code className="font-mono text-slate-700">POINT_FULL_ATTENDANCE</code>
                   </p>
-                  <div className="flex items-center gap-2 pt-1">
+                  <div className="flex flex-wrap items-center gap-2 pt-1">
                     <input
                       type="number"
                       value={pointFullAttendance}
@@ -258,7 +261,7 @@ export default function AdminSettingsPage() {
                   <p className="text-[11px] text-slate-500">
                     Mã cấu hình: <code className="font-mono text-slate-700">POINT_LATE</code>
                   </p>
-                  <div className="flex items-center gap-2 pt-1">
+                  <div className="flex flex-wrap items-center gap-2 pt-1">
                     <input
                       type="number"
                       value={pointLate}
@@ -280,7 +283,7 @@ export default function AdminSettingsPage() {
                   <p className="text-[11px] text-slate-500">
                     Mã cấu hình: <code className="font-mono text-slate-700">POINT_HALF_ABSENCE</code>
                   </p>
-                  <div className="flex items-center gap-2 pt-1">
+                  <div className="flex flex-wrap items-center gap-2 pt-1">
                     <input
                       type="number"
                       value={pointHalfAbsence}
@@ -302,7 +305,7 @@ export default function AdminSettingsPage() {
                   <p className="text-[11px] text-slate-500">
                     Mã cấu hình: <code className="font-mono text-slate-700">POINT_ABSENCE_WITHOUT_LEAVE</code>
                   </p>
-                  <div className="flex items-center gap-2 pt-1">
+                  <div className="flex flex-wrap items-center gap-2 pt-1">
                     <input
                       type="number"
                       value={pointAbsenceWithoutLeave}
@@ -314,7 +317,7 @@ export default function AdminSettingsPage() {
                 </div>
 
                 {/* POINT_UNIFORM_VIOLATION */}
-                <div className="p-3.5 rounded-md border border-slate-200 bg-slate-50/40 space-y-1.5 md:col-span-2">
+                <div className="p-3.5 rounded-md border border-slate-200 bg-slate-50/40 space-y-1.5 sm:col-span-2">
                   <div className="flex items-center justify-between">
                     <label className="text-xs font-semibold text-slate-800">
                       Vi phạm quy định đồng phục
@@ -324,7 +327,7 @@ export default function AdminSettingsPage() {
                   <p className="text-[11px] text-slate-500">
                     Mã cấu hình: <code className="font-mono text-slate-700">POINT_UNIFORM_VIOLATION</code>
                   </p>
-                  <div className="flex items-center gap-2 pt-1">
+                  <div className="flex flex-wrap items-center gap-2 pt-1">
                     <input
                       type="number"
                       value={pointUniformViolation}
@@ -339,7 +342,7 @@ export default function AdminSettingsPage() {
 
             {/* SECTION 2: ACADEMIC POLICIES & TOLERANCES */}
             <div className="bg-white rounded-lg border border-slate-200 shadow-xs overflow-hidden">
-              <div className="px-6 py-4 border-b border-slate-200 bg-slate-50/50 flex items-center gap-2.5">
+              <div className="px-4 sm:px-6 py-4 border-b border-slate-200 bg-slate-50/50 flex items-center gap-2.5">
                 <div className="p-1.5 bg-indigo-50 text-indigo-700 border border-indigo-200 rounded-md">
                   <Sliders size={16} />
                 </div>
@@ -353,7 +356,7 @@ export default function AdminSettingsPage() {
                 </div>
               </div>
 
-              <div className="p-6 grid grid-cols-1 md:grid-cols-2 gap-5">
+              <div className="p-4 sm:p-6 grid grid-cols-1 sm:grid-cols-2 gap-4 sm:gap-5">
                 {/* LATE_TOLERANCE_MINUTES */}
                 <div className="p-3.5 rounded-md border border-slate-200 bg-slate-50/40 space-y-1.5">
                   <label className="text-xs font-semibold text-slate-800 flex items-center gap-1.5">
@@ -363,7 +366,7 @@ export default function AdminSettingsPage() {
                   <p className="text-[11px] text-slate-500">
                     Mã: <code className="font-mono text-slate-700">LATE_TOLERANCE_MINUTES</code>
                   </p>
-                  <div className="flex items-center gap-2 pt-1">
+                  <div className="flex flex-wrap items-center gap-2 pt-1">
                     <input
                       type="number"
                       min={0}
@@ -407,7 +410,7 @@ export default function AdminSettingsPage() {
                   <p className="text-[11px] text-slate-500">
                     Mã: <code className="font-mono text-slate-700">MAX_ABSENCE_PERCENT_EXAM_BAN</code>
                   </p>
-                  <div className="flex items-center gap-2 pt-1">
+                  <div className="flex flex-wrap items-center gap-2 pt-1">
                     <input
                       type="number"
                       min={1}
@@ -429,7 +432,7 @@ export default function AdminSettingsPage() {
                   <p className="text-[11px] text-slate-500">
                     Mã: <code className="font-mono text-slate-700">WARNING_ABSENCE_PERCENT</code>
                   </p>
-                  <div className="flex items-center gap-2 pt-1">
+                  <div className="flex flex-wrap items-center gap-2 pt-1">
                     <input
                       type="number"
                       min={1}
@@ -446,7 +449,7 @@ export default function AdminSettingsPage() {
 
             {/* SECTION 3: NIGHTLY EVALUATION RUN-NOW */}
             <div className="bg-white rounded-lg border border-slate-200 shadow-xs overflow-hidden">
-              <div className="px-6 py-4 border-b border-slate-200 bg-slate-50/50 flex items-center justify-between">
+              <div className="px-4 sm:px-6 py-4 border-b border-slate-200 bg-slate-50/50 flex flex-wrap items-center justify-between gap-2">
                 <div className="flex items-center gap-2.5">
                   <div className="p-1.5 bg-sky-50 text-sky-700 border border-sky-200 rounded-md">
                     <Play size={16} />
@@ -462,9 +465,9 @@ export default function AdminSettingsPage() {
                 </div>
               </div>
 
-              <div className="p-6 space-y-4">
-                <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3">
-                  <div>
+              <div className="p-4 sm:p-6 space-y-4">
+                <div className="flex flex-col sm:flex-row items-stretch sm:items-end gap-3">
+                  <div className="w-full sm:w-auto">
                     <label className="block text-[11px] font-semibold text-slate-700 mb-1">
                       Ngày đánh giá chuyên cần:
                     </label>
@@ -474,24 +477,24 @@ export default function AdminSettingsPage() {
                         type="date"
                         value={targetDate}
                         onChange={(e) => setTargetDate(e.target.value)}
-                        className="pl-8 pr-3 py-1.5 text-xs font-mono rounded-md border border-slate-200 bg-white focus:outline-hidden focus:ring-1 focus:ring-slate-900"
+                        className="w-full sm:w-auto pl-8 pr-3 py-2 sm:py-1.5 min-h-[38px] text-xs font-mono rounded-md border border-slate-200 bg-white focus:outline-hidden focus:ring-1 focus:ring-slate-900"
                       />
                     </div>
                   </div>
 
-                  <div className="sm:self-end">
+                  <div className="w-full sm:w-auto">
                     <button
                       type="button"
                       onClick={handleRunEvaluationNow}
                       disabled={isEvaluating}
-                      className="flex items-center justify-center gap-2 px-4 py-2 text-xs font-semibold text-white bg-slate-900 hover:bg-slate-800 rounded-md transition-colors disabled:opacity-50 cursor-pointer w-full sm:w-auto shadow-xs"
+                      className="flex items-center justify-center gap-2 px-4 py-2 min-h-[38px] text-xs font-semibold text-white bg-slate-900 hover:bg-slate-800 rounded-md transition-colors disabled:opacity-50 cursor-pointer w-full sm:w-auto shadow-xs"
                     >
                       {isEvaluating ? (
                         <Loader2 size={14} className="animate-spin" />
                       ) : (
                         <Play size={14} />
                       )}
-                      Chạy tính điểm ngay (Run Now)
+                      <span>Chạy tính điểm ngay (Run Now)</span>
                     </button>
                   </div>
                 </div>
