@@ -1,24 +1,21 @@
 from __future__ import annotations
 
-import json
 from datetime import datetime
-from typing import Any, List, Optional
-import cv2
-import numpy as np
+from typing import List, Optional
 from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile, status
 from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy import func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
-from ..ai.pipeline import get_shared_models
 from ..core.deps import get_db
 from ..core.security import get_password_hash
 from ..models.user import Role, StudentProfile, TeacherProfile, User
-from .deps_auth import require_role
+from ..services.storage_service import upload_avatar
+from .deps_auth import require_admin
 from .files import decode_upload
 
-router = APIRouter(dependencies=[Depends(require_role("ADMIN"))])
+router = APIRouter(dependencies=[Depends(require_admin)])
 
 
 # =====================================================================
@@ -76,7 +73,6 @@ class UserCreateRequest(BaseModel):
     # StudentProfile fields
     class_name: Optional[str] = ""
     major: Optional[str] = ""
-    face_embedding: Optional[str] = None
 
     # TeacherProfile fields
     department: Optional[str] = ""
@@ -134,24 +130,13 @@ def serialize_admin_user(user: User) -> AdminUserResponse:
     )
 
 
-def get_face_embedding(img: np.ndarray) -> Optional[np.ndarray]:
-    """Helper function to extract face embedding vector using shared AI model."""
-    try:
-        shared_models = get_shared_models()
-        if len(shared_models) > 1 and shared_models[1] is not None:
-            return shared_models[1].embed(img, check_liveness=False)
-    except Exception:
-        pass
-    return None
-
-
 # =====================================================================
 # ENDPOINTS
 # =====================================================================
 @router.get("", response_model=AdminUserPage)
 async def list_users(
     page: int = Query(1, ge=1),
-    size: int = Query(20, ge=1, le=100),
+    size: int = Query(20, ge=1, le=500),
     role: str = Query("", description="Filter by role: ADMIN, TEACHER, STUDENT"),
     q: str = Query("", description="Search by user_code, full_name, email"),
     s: AsyncSession = Depends(get_db),
@@ -180,15 +165,12 @@ async def list_users(
             )
         )
 
-    # Count total
-    count_stmt = select(func.count()).select_from(stmt.subquery())
-    total = (await s.execute(count_stmt)).scalar() or 0
+    # Count total + paginate (helper dùng chung toàn codebase)
+    from ..core.pagination import paginate_stmt
 
-    # Paginate
-    offset = (page - 1) * size
-    query = stmt.order_by(User.id.desc()).offset(offset).limit(size)
-    result = await s.execute(query)
-    users = result.scalars().all()
+    users, total = await paginate_stmt(
+        s, stmt.order_by(User.id.desc()), page, size,
+    )
 
     items = [serialize_admin_user(u) for u in users]
     return AdminUserPage(items=items, total=total, page=page, size=size)
@@ -248,7 +230,6 @@ async def create_user(
             user_id=new_user.id,
             class_name=body.class_name or "",
             major=body.major or "",
-            face_embedding=body.face_embedding,
             total_point=100,
         )
         s.add(student_prof)
@@ -359,12 +340,13 @@ async def delete_user(
     return {"ok": True, "message": "User soft deleted successfully"}
 
 
-@router.post("/{user_id}/face-enroll")
-async def enroll_face(
+@router.post("/{user_id}/avatar")
+async def upload_user_avatar(
     user_id: int,
     photo: UploadFile = File(...),
     s: AsyncSession = Depends(get_db),
 ):
+    """Upload ảnh chân dung cho người dùng (lưu avatar_url, không trích xuất khuôn mặt)."""
     stmt = (
         select(User)
         .options(selectinload(User.student_profile))
@@ -377,24 +359,29 @@ async def enroll_face(
             detail=f"Không tìm thấy người dùng có ID {user_id}",
         )
 
-    if not user.student_profile:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Chỉ hỗ trợ đăng ký khuôn mặt cho tài khoản sinh viên",
-        )
-
     # Read and decode image
     img = await decode_upload(photo)
-    emb = get_face_embedding(img)
-    if emb is None:
-        raise HTTPException(
-            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-            detail="Không tìm thấy khuôn mặt trong ảnh",
-        )
 
-    # Save serialized 512-dim embedding as JSON string
-    vector_list = np.asarray(emb, dtype=np.float32).tolist()
-    user.student_profile.face_embedding = json.dumps(vector_list)
+    # Ảnh chân dung -> Supabase Storage bucket avatars (fallback đĩa local khi offline).
+    avatar_url = await upload_avatar(user.user_code, img)
+    if avatar_url:
+        user.avatar_url = avatar_url
 
     await s.commit()
-    return {"ok": True, "user_id": user_id, "face_enrolled": True}
+
+    # Best-effort: trích embedding khuôn mặt từ ảnh vừa upload (không làm fail upload).
+    face_status = "skipped"
+    try:
+        from ..services import face_service as _face_service
+
+        await _face_service.enroll_image(s, user.id, img, source="avatar")
+        face_status = "enrolled"
+    except Exception as e:  # noqa: BLE001
+        face_status = f"no-face: {e}"
+
+    return {
+        "ok": True,
+        "user_id": user_id,
+        "avatar_url": user.avatar_url,
+        "face_status": face_status,
+    }

@@ -123,7 +123,7 @@ class ScheduleUpdateRequest(BaseModel):
 @router.get("/classes", response_model=ClassPage)
 async def list_classes(
     page: int = Query(1, ge=1),
-    size: int = Query(20, ge=1, le=100),
+    size: int = Query(20, ge=1, le=500),
     q: str = Query("", description="Search by class_code or course_name"),
     s: AsyncSession = Depends(get_db),
 ):
