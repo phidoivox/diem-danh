@@ -4,7 +4,11 @@ import React, { useState, useMemo } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { RoleGuard } from "@/components/layout/role-guard";
 import { formatDateTime as formatDateTimeVN } from "@/lib/date";
-import { getStudentConductLedger, StudentConductLedger } from "@/lib/api";
+import {
+  getStudentConductLedger,
+  StudentConductLedger,
+  ConductLedgerEntry,
+} from "@/lib/api";
 import {
   Award,
   TrendingUp,
@@ -12,11 +16,67 @@ import {
   RefreshCw,
   Clock,
   ShieldCheck,
-  AlertTriangle,
-  FileText,
-  Calendar,
   Filter,
 } from "lucide-react";
+
+interface ConductLedgerCardProps {
+  item: ConductLedgerEntry;
+  formatTimestamp: (ts: string) => string;
+  getReasonLabel: (code: string) => string;
+}
+
+function ConductLedgerCard({
+  item,
+  formatTimestamp,
+  getReasonLabel,
+}: ConductLedgerCardProps) {
+  const isPositive = item.point_delta > 0;
+
+  return (
+    <div className="p-3.5 bg-white rounded-lg border border-slate-200 shadow-xs space-y-2.5 transition-colors hover:border-slate-300">
+      {/* Header: Reason Label & Code, Point Delta Badge */}
+      <div className="flex items-start justify-between gap-2">
+        <div className="min-w-0 flex-1">
+          <div className="flex items-center gap-1.5 flex-wrap">
+            <span className="font-semibold text-xs text-slate-900 leading-tight">
+              {getReasonLabel(item.reason_code)}
+            </span>
+            <span className="font-mono text-[10px] text-slate-400 bg-slate-100 px-1.5 py-0.5 rounded">
+              {item.reason_code}
+            </span>
+          </div>
+          <div className="flex items-center gap-1 text-[11px] text-slate-500 font-mono mt-1">
+            <Clock size={12} className="text-slate-400 shrink-0" />
+            <span>{formatTimestamp(item.created_at)}</span>
+          </div>
+        </div>
+
+        {/* Badge Point Delta */}
+        <span
+          className={`shrink-0 inline-flex items-center gap-1 px-2.5 py-1 rounded text-xs font-semibold font-mono tabular-nums border ${
+            isPositive
+              ? "bg-emerald-50 text-emerald-700 border-emerald-200"
+              : "bg-rose-50 text-rose-700 border-rose-200"
+          }`}
+        >
+          {isPositive ? (
+            <TrendingUp size={12} className="shrink-0" />
+          ) : (
+            <TrendingDown size={12} className="shrink-0" />
+          )}
+          {isPositive ? `+${item.point_delta}` : item.point_delta} điểm
+        </span>
+      </div>
+
+      {/* Body: Description */}
+      {item.description && (
+        <div className="text-xs text-slate-600 bg-slate-50 rounded-md p-2.5 border border-slate-100 leading-relaxed">
+          {item.description}
+        </div>
+      )}
+    </div>
+  );
+}
 
 export default function StudentConductPointsPage() {
   const queryClient = useQueryClient();
@@ -130,7 +190,7 @@ export default function StudentConductPointsPage() {
 
   return (
     <RoleGuard allowedRoles={["STUDENT", "ADMIN"]}>
-      <div className="space-y-6">
+      <div className="space-y-4 sm:space-y-6 max-w-7xl mx-auto">
         {/* Page Header */}
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-4 border-b border-slate-200">
           <div>
@@ -144,7 +204,7 @@ export default function StudentConductPointsPage() {
           <button
             onClick={fetchLedger}
             disabled={loading}
-            className="h-8 px-3 rounded-md text-xs font-medium border border-slate-200 bg-white text-slate-700 hover:bg-slate-50 transition-colors inline-flex items-center gap-1.5 shadow-sm self-start sm:self-auto"
+            className="min-h-[38px] sm:min-h-0 h-9 sm:h-8 px-3 rounded-md text-xs font-medium border border-slate-200 bg-white text-slate-700 hover:bg-slate-50 transition-colors inline-flex items-center gap-1.5 shadow-xs self-start sm:self-auto"
           >
             <RefreshCw size={13} className={loading ? "animate-spin" : ""} />
             <span>Làm mới</span>
@@ -255,17 +315,19 @@ export default function StudentConductPointsPage() {
         </div>
 
         {/* Filter Toolbar */}
-        <div className="p-3 bg-white rounded-lg border border-slate-200 shadow-sm flex flex-wrap items-center justify-between gap-3">
-          <div className="flex items-center gap-2">
-            <Filter size={14} className="text-slate-400" />
-            <span className="text-xs text-slate-600 font-medium">Lọc biến động:</span>
-            <div className="inline-flex rounded-md p-0.5 bg-slate-100 border border-slate-200 ml-1">
+        <div className="p-3 bg-white rounded-lg border border-slate-200 shadow-sm flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 sm:gap-3">
+          <div className="flex flex-col sm:flex-row sm:items-center gap-2">
+            <div className="flex items-center gap-1.5 text-slate-600">
+              <Filter size={14} className="text-slate-400" />
+              <span className="text-xs font-medium">Lọc biến động:</span>
+            </div>
+            <div className="inline-flex rounded-lg p-0.5 sm:p-1 bg-slate-100 border border-slate-200/80 max-w-full overflow-x-auto">
               <button
                 type="button"
                 onClick={() => setReasonFilter("ALL")}
-                className={`px-2.5 py-1 text-xs font-medium rounded ${
+                className={`min-h-[38px] sm:min-h-[32px] px-3 py-1.5 text-xs font-medium rounded-md whitespace-nowrap transition-colors ${
                   reasonFilter === "ALL"
-                    ? "bg-white text-slate-900 shadow-xs"
+                    ? "bg-white text-slate-900 shadow-xs font-semibold"
                     : "text-slate-600 hover:text-slate-900"
                 }`}
               >
@@ -274,9 +336,9 @@ export default function StudentConductPointsPage() {
               <button
                 type="button"
                 onClick={() => setReasonFilter("PLUS")}
-                className={`px-2.5 py-1 text-xs font-medium rounded ${
+                className={`min-h-[38px] sm:min-h-[32px] px-3 py-1.5 text-xs font-medium rounded-md whitespace-nowrap transition-colors ${
                   reasonFilter === "PLUS"
-                    ? "bg-white text-emerald-700 shadow-xs"
+                    ? "bg-white text-emerald-700 shadow-xs font-semibold"
                     : "text-slate-600 hover:text-slate-900"
                 }`}
               >
@@ -285,9 +347,9 @@ export default function StudentConductPointsPage() {
               <button
                 type="button"
                 onClick={() => setReasonFilter("MINUS")}
-                className={`px-2.5 py-1 text-xs font-medium rounded ${
+                className={`min-h-[38px] sm:min-h-[32px] px-3 py-1.5 text-xs font-medium rounded-md whitespace-nowrap transition-colors ${
                   reasonFilter === "MINUS"
-                    ? "bg-white text-rose-700 shadow-xs"
+                    ? "bg-white text-rose-700 shadow-xs font-semibold"
                     : "text-slate-600 hover:text-slate-900"
                 }`}
               >
@@ -301,7 +363,7 @@ export default function StudentConductPointsPage() {
           </div>
         </div>
 
-        {/* Ledger Table */}
+        {/* Ledger Table & Card Feed */}
         <div className="bg-white border border-slate-200 rounded-lg shadow-sm overflow-hidden">
           {loading ? (
             <div className="p-12 text-center">
@@ -321,60 +383,75 @@ export default function StudentConductPointsPage() {
               </p>
             </div>
           ) : (
-            <div className="overflow-x-auto">
-              <table className="w-full text-left text-xs">
-                <thead className="bg-slate-50/75 border-b border-slate-200 text-[11px] font-semibold text-slate-500 uppercase tracking-wider">
-                  <tr>
-                    <th className="px-4 py-3 font-mono">Thời gian</th>
-                    <th className="px-4 py-3 font-mono">Biến động</th>
-                    <th className="px-4 py-3 font-mono">Mã lý do</th>
-                    <th className="px-4 py-3">Loại biến động</th>
-                    <th className="px-4 py-3">Diễn giải chi tiết</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-slate-200 text-slate-700">
-                  {filteredItems.map((item) => {
-                    const isPositive = item.point_delta > 0;
-                    return (
-                      <tr key={item.id} className="hover:bg-slate-50/70 transition-colors">
-                        {/* Timestamp */}
-                        <td className="px-4 py-3 font-mono tabular-nums text-slate-600 whitespace-nowrap">
-                          {formatTimestamp(item.created_at)}
-                        </td>
+            <>
+              {/* Desktop Table View */}
+              <div className="hidden md:block overflow-x-auto">
+                <table className="w-full text-left text-xs">
+                  <thead className="bg-slate-50/75 border-b border-slate-200 text-[11px] font-semibold text-slate-500 uppercase tracking-wider">
+                    <tr>
+                      <th className="px-4 py-3 font-mono">Thời gian</th>
+                      <th className="px-4 py-3 font-mono">Biến động</th>
+                      <th className="px-4 py-3 font-mono">Mã lý do</th>
+                      <th className="px-4 py-3">Loại biến động</th>
+                      <th className="px-4 py-3">Diễn giải chi tiết</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-200 text-slate-700">
+                    {filteredItems.map((item) => {
+                      const isPositive = item.point_delta > 0;
+                      return (
+                        <tr key={item.id} className="hover:bg-slate-50/70 transition-colors">
+                          {/* Timestamp */}
+                          <td className="px-4 py-3 font-mono tabular-nums text-slate-600 whitespace-nowrap">
+                            {formatTimestamp(item.created_at)}
+                          </td>
 
-                        {/* Point Delta */}
-                        <td className="px-4 py-3 font-mono tabular-nums whitespace-nowrap">
-                          <span
-                            className={`inline-flex items-center px-2 py-0.5 rounded text-xs font-semibold ${
-                              isPositive
-                                ? "bg-emerald-50 text-emerald-700 border border-emerald-200"
-                                : "bg-rose-50 text-rose-700 border border-rose-200"
-                            }`}
-                          >
-                            {isPositive ? `+${item.point_delta}` : item.point_delta} điểm
-                          </span>
-                        </td>
+                          {/* Point Delta */}
+                          <td className="px-4 py-3 font-mono tabular-nums whitespace-nowrap">
+                            <span
+                              className={`inline-flex items-center px-2 py-0.5 rounded text-xs font-semibold ${
+                                isPositive
+                                  ? "bg-emerald-50 text-emerald-700 border border-emerald-200"
+                                  : "bg-rose-50 text-rose-700 border border-rose-200"
+                              }`}
+                            >
+                              {isPositive ? `+${item.point_delta}` : item.point_delta} điểm
+                            </span>
+                          </td>
 
-                        {/* Reason Code */}
-                        <td className="px-4 py-3 font-mono text-[11px] text-slate-500 whitespace-nowrap">
-                          {item.reason_code}
-                        </td>
+                          {/* Reason Code */}
+                          <td className="px-4 py-3 font-mono text-[11px] text-slate-500 whitespace-nowrap">
+                            {item.reason_code}
+                          </td>
 
-                        {/* Friendly Category */}
-                        <td className="px-4 py-3 font-medium text-slate-800 whitespace-nowrap">
-                          {getReasonLabel(item.reason_code)}
-                        </td>
+                          {/* Friendly Category */}
+                          <td className="px-4 py-3 font-medium text-slate-800 whitespace-nowrap">
+                            {getReasonLabel(item.reason_code)}
+                          </td>
 
-                        {/* Description */}
-                        <td className="px-4 py-3 text-slate-600">
-                          {item.description || "--"}
-                        </td>
-                      </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
-            </div>
+                          {/* Description */}
+                          <td className="px-4 py-3 text-slate-600">
+                            {item.description || "--"}
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+
+              {/* Mobile Card Feed View */}
+              <div className="md:hidden space-y-2.5 p-3">
+                {filteredItems.map((item) => (
+                  <ConductLedgerCard
+                    key={item.id}
+                    item={item}
+                    formatTimestamp={formatTimestamp}
+                    getReasonLabel={getReasonLabel}
+                  />
+                ))}
+              </div>
+            </>
           )}
         </div>
       </div>
