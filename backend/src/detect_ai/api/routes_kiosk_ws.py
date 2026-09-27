@@ -15,7 +15,11 @@ mỗi schedule 1 KioskSession.
 
 import asyncio
 import time
-from datetime import datetime, timezone
+from datetime import datetime
+from zoneinfo import ZoneInfo
+_VN_TZ = ZoneInfo("Asia/Ho_Chi_Minh")
+def _today_vn():
+    return datetime.now(_VN_TZ).date()
 
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 from loguru import logger
@@ -92,8 +96,7 @@ async def kiosk_ws(ws: WebSocket):
             await ws.close()
             return
         # Chỉ mở điểm danh khi có tiết: đúng ngày học mới cho kiosk chạy.
-        from datetime import date as _date
-        if sched.study_date != _date.today():
+        if sched.study_date != _today_vn():
             await ws.send_json({"error": "Hôm nay lớp không có tiết — điểm danh đang đóng"})
             await ws.close()
             return

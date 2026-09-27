@@ -334,3 +334,14 @@ def test_vote_survives_track_id_change(monkeypatch):
     sess.tracker._tracks.clear()
     d2 = sess.process(img, gal, now=1000.8)[0]
     assert d2.decision == "CONFIRMED" and d2.student_id == 1
+
+
+def test_enroll_no_model_rejected(monkeypatch):
+    from detect_ai.recognition import enroll as enroll_mod
+    from detect_ai.recognition import liveness as live_mod
+    monkeypatch.setattr(live_mod, "check_live",
+                        lambda img, kps=None, bbox=None, **kw: LiveVerdict("no_model", 0.0, "none", "no-model"))
+    face = _make_face(_vec(7))
+    with pytest.raises(enroll_mod.EnrollError):
+        enroll_mod.extract_best(np.zeros((480, 640, 3), np.uint8),
+                                engine=_FakeFaceEngine(face))

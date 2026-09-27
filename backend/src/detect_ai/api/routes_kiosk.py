@@ -36,6 +36,12 @@ from ..services import face_service
 from ..services.settings_repo import load_min_checkout_gap
 from .deps_auth import require_admin, require_teacher
 
+from zoneinfo import ZoneInfo
+_VN_TZ = ZoneInfo("Asia/Ho_Chi_Minh")
+def _today_vn():
+    from datetime import datetime
+    return datetime.now(_VN_TZ).date()
+
 router = APIRouter(prefix="/api/v1/kiosk", tags=["kiosk"])
 
 
@@ -80,8 +86,6 @@ def _lock_for(schedule_id: int) -> asyncio.Lock:
 
 
 async def _get_schedule_for_teacher(db: AsyncSession, schedule_id: int, teacher_id: int) -> Schedule:
-    from datetime import date
-
     stmt = (
         select(Schedule)
         .options(selectinload(Schedule.clazz).selectinload(Class.course))
@@ -94,7 +98,7 @@ async def _get_schedule_for_teacher(db: AsyncSession, schedule_id: int, teacher_
         raise HTTPException(status.HTTP_403_FORBIDDEN, "Bạn không quản lý buổi học này")
     # Chỉ mở điểm danh khi có tiết: đúng ngày học mới cho kiosk chạy.
     # Sửa tay (manual-override) vẫn cho phép ngoài giờ.
-    if sched.study_date != date.today():
+    if sched.study_date != _today_vn():
         raise HTTPException(status.HTTP_403_FORBIDDEN, "Hôm nay lớp không có tiết — điểm danh đang đóng")
     return sched
 

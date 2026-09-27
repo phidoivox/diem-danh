@@ -35,6 +35,8 @@ _uniform: UniformEngine | None = None
 #: (mỗi ~450ms) không query DB nên dùng hằng số này làm mặc định.
 MIN_CHECKOUT_GAP_MINUTES = 5
 
+_spoof_last: dict[tuple[int, int], float] = {}
+
 
 def uniform_hook_factory() -> Callable[..., object] | None:
     """Lazy singleton UniformEngine: 1 predict/frame (pipeline `uniform_predict`).
@@ -229,9 +231,14 @@ async def commit_decisions(db, schedule_id: int, teacher_id: int,
                 if sid not in already_done:
                     already_done.append(sid)
         elif d.decision == "SPOOF":
-            spoof_seen = True
-            db.add(FaceEvent(schedule_id=schedule_id, student_id=None,
-                             confidence=0.0, liveness_score=d.liveness, decision="SPOOF"))
+            import time as _t
+            key = (schedule_id, int(d.student_id) if d.student_id else -d.track_id)
+            if _t.monotonic() - _spoof_last.get(key, 0.0) >= 10.0:
+                _spoof_last[key] = _t.monotonic()
+                spoof_seen = True
+                db.add(FaceEvent(schedule_id=schedule_id, student_id=None,
+                                 confidence=0.0, liveness_score=d.liveness, decision="SPOOF"))
+            # ponytail: cần audit full thì log DB mỗi frame thay vì throttle
     if changed or spoof_seen:
         await db.commit()
     return {"checked_in": checked_in, "checked_out": checked_out, "already_done": already_done}
