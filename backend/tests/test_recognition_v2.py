@@ -345,3 +345,34 @@ def test_enroll_no_model_rejected(monkeypatch):
     with pytest.raises(enroll_mod.EnrollError):
         enroll_mod.extract_best(np.zeros((480, 640, 3), np.uint8),
                                 engine=_FakeFaceEngine(face))
+
+
+@pytest.mark.asyncio
+async def test_commit_no_reinfer_when_det_none(monkeypatch, session_maker_fixture, v2_seed):
+    """att None + frame_bgr có + d.uniform_det None -> KHÔNG gọi _detect_uniform.
+
+    Bug thật (snapshot 6/3_in): pipeline infer 0 box -> status violation,
+    nhưng commit fallback infer lại ra invalid_shirt -> snapshot khung đỏ +
+    nhãn theo status cũ -> mismatch. Sau fix: dùng d.uniform_det (None =
+    không vẽ áo), không infer lại.
+    """
+    import detect_ai.recognition.service as svc_mod
+    from detect_ai.recognition.pipeline import FaceDecision
+
+    boom_calls: list = []
+
+    def boom(img):
+        boom_calls.append(1)
+        return None
+
+    monkeypatch.setattr(svc_mod, "_detect_uniform", boom)
+    sid = v2_seed["student_id"]
+    sched = v2_seed["schedule_id"]
+    d = FaceDecision(1, [10, 10, 100, 120], sid, 0.9, 0.2, 0.95, "onnx",
+                     0.9, "CONFIRMED", 2, "unknown", 0.0, None)
+    async with session_maker_fixture() as db:
+        out = await svc_mod.commit_decisions(
+            db, sched, v2_seed["teacher_id"], [d],
+            frame_bgr=np.zeros((10, 10, 3), np.uint8))
+    assert sid in out["checked_in"]
+    assert boom_calls == [], "commit infer lại uniform — phải dùng d.uniform_det (None = không vẽ áo)"

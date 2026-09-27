@@ -75,27 +75,12 @@ def uniform_hook_factory() -> Callable[..., object] | None:
 
 
 def _detect_uniform(img_bgr):
-    """Detect đồng phục trên đúng frame check-in/out để vẽ khung làm bằng chứng.
+    """Legacy fallback: KHÔNG dùng nữa (giữ stub để caller cũ không vỡ import).
 
-    Chỉ gọi đúng lúc transition (tối đa 2 lần/người/tiết) nên 1 lần infer
-    thêm không ảnh hưởng hot-path kiosk. Thiếu weights -> None (vẫn lưu
-    ảnh + khung mặt + timestamp).
+    Snapshot phải vẽ đúng det đã tính status trong pipeline (`d.uniform_det`).
+    Infer lại ở commit từng gây mismatch status/hình (khung đỏ + nhãn DAT).
     """
-    global _uniform
-    try:
-        cfg = get_config()
-    except Exception:
-        return None
-    if _uniform is None:
-        try:
-            _uniform = UniformEngine(imgsz=cfg.uniform_imgsz, conf=cfg.uniform_conf,
-                                     provider=cfg.uniform_provider)
-        except Exception:
-            return None
-    try:
-        return _uniform.predict(img_bgr)
-    except Exception:
-        return None
+    return None
 
 
 def to_legacy(decision: str) -> str:
@@ -163,7 +148,7 @@ async def commit_decisions(db, schedule_id: int, teacher_id: int,
             if att is None:
                 snap = None
                 if frame_bgr is not None:
-                    uniform_det = d.uniform_det if d.uniform_det is not None else _detect_uniform(frame_bgr)
+                    uniform_det = d.uniform_det
                     snap = _img_svc.save_attendance_snapshot(
                         frame_bgr, d.bbox, schedule_id, sid, "in",
                         uniform_det=uniform_det, uniform_status=d.uniform_status)
@@ -194,7 +179,7 @@ async def commit_decisions(db, schedule_id: int, teacher_id: int,
                     att.note = note
                 if frame_bgr is not None and not att.check_in_snapshot_url:
                     try:
-                        uniform_det = d.uniform_det if d.uniform_det is not None else _detect_uniform(frame_bgr)
+                        uniform_det = d.uniform_det
                         att.check_in_snapshot_url = _img_svc.save_attendance_snapshot(
                             frame_bgr, d.bbox, schedule_id, sid, "in",
                             uniform_det=uniform_det, uniform_status=d.uniform_status)
@@ -215,7 +200,7 @@ async def commit_decisions(db, schedule_id: int, teacher_id: int,
                         _sess.done_students.discard(sid)
                     if frame_bgr is not None:
                         try:
-                            uniform_det = d.uniform_det if d.uniform_det is not None else _detect_uniform(frame_bgr)
+                            uniform_det = d.uniform_det
                             att.check_out_snapshot_url = _img_svc.save_attendance_snapshot(
                                 frame_bgr, d.bbox, schedule_id, sid, "out",
                                 uniform_det=uniform_det, uniform_status=d.uniform_status)
