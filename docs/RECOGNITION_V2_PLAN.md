@@ -30,7 +30,7 @@ MediaPipe FaceDetector → vẽ box canvas (0ms)
  ▼
 routes_kiosk_ws.py (queue latest-only maxsize=1, drop cũ)
  ├─ InsightFace.get → embedding + liveness cùng lúc
- ├─ ByteTrackTracker.update → track_id
+ ├─ IoUTracker.update → track_id
  ├─ Gallery matcher → top1/top2 margin
  ├─ Pipeline vote N/W → PROVISIONAL/CONFIRMED/SPOOF/CHALLENGE/UNKNOWN/LOWQ/REJECTED
  ├─ YOLO uniform run-once khi vote >= N-1 → ok/violation/unknown
@@ -40,12 +40,13 @@ routes_kiosk_ws.py (queue latest-only maxsize=1, drop cũ)
 matchServerIdentities() ghép nhãn server (trễ 200–400ms) vào box 60 FPS
 ```
 
-Hot-path sau xong: `ByteTrackTracker -> InsightFace.get -> YOLO run-once`.
+Hot-path sau xong: `IoUTracker -> InsightFace.get -> YOLO run-once`.
 
 ## 3. Xác thực docs
 
-- `sv.ByteTrack` chết: deprecated 0.28, xóa 0.31. Dùng `trackers.ByteTrackTracker`. Method `update(detections, frame=None)`, không `update_with_detections`. Nguồn: `/roboflow/supervision` trackers.md, deprecated.md + `trackers.roboflow.com/latest`, PyPI trackers 2.6.0.
-- `trackers` cần `supervision>=0.26.1`, `numpy>=2.0.2`, `scipy`, `opencv-python`, Python>=3.10. Dự án Python 3.12 → tương thích.
+- Tracking: chốt IoU (`recognition/tracks.py`), không ByteTrack — `trackers`
+  /ByteTrack từng cân nhắc nhưng loại: kiosk max 3 mặt, Kalman overkill,
+  `tracker_id=-1` vỡ vote, thêm dependency trái constraint.
 - `YOLO("yolo26n.pt")` + `YOLO("yolo26n.onnx")` cùng API. `model(img, verbose=False)[0]` → `sv.Detections.from_ultralytics`. NMS nội bộ. `nms=False` = end-to-end `(N,300,6)`. Nguồn: `/ultralytics/ultralytics` onnx.md, yolo26.md.
 - Prod YOLO: export OpenVINO, auto LATENCY mode batch=1, nhanh hơn `.pt` CPU 2–3x Intel.
 - `sv.box_iou_batch` chưa snippet xác nhận → giữ `_iou` tay tạm, không thay mù.
@@ -56,11 +57,9 @@ Hot-path sau xong: `ByteTrackTracker -> InsightFace.get -> YOLO run-once`.
 ## 4. Thay đổi theo file
 
 ### `backend/pyproject.toml`
-- Thêm `trackers` (+ kéo `supervision>=0.26.1`).
-- Giữ `ultralytics>=8.3`, `insightface>=0.7`, `onnxruntime>=1.18`.
+- Không thêm dependency (giữ `ultralytics>=8.3`, `insightface>=0.7`, `onnxruntime>=1.18`).
 
 ### `recognition/config.py`
-- Thêm: `track_activation_threshold=0.25`, `lost_track_buffer=30`, `minimum_matching_threshold=0.8`, `minimum_consecutive_frames=1` (ID ngay frame đầu, không trễ vote).
 - Weights YOLO: `best.pt` > `uniform_yolo26.pt` > `.onnx` > fallback.
 - Xóa config `minifas_model`.
 
@@ -111,9 +110,11 @@ det = sv.Detections.from_ultralytics(r)
 - Giữ `_pick_imgsz`: CPU yếu 320, thường 384, GPU 640.
 
 ### `recognition/pipeline.py`
-- Signature tracker mới `update(boxes, scores, now)`.
+- Signature tracker giữ `update(boxes, now)` (IoU).
 - Liveness ưu tiên `face.live_score`, lazy chỉ candidate accept.
 - Uniform run-once khi `vote >= N-1`, cache `uniform_done[sid]`. Máy trạng thái giữ nguyên.
+- Vote per-sid (`votes_by_sid`): sống qua đổi track ID. `done` scope
+  in/out (checkout → `done_students.discard(sid)` trong service).
 
 ### `service.py`, `routes_kiosk_ws.py` — giữ
 - 2 lượt/tiết, `MIN_CHECKOUT_GAP_MINUTES`, proof crop, latest-only, `next_interval_ms/next_width` theo `infer_ms`.
@@ -125,16 +126,15 @@ det = sv.Detections.from_ultralytics(r)
 
 ## 5. Giữ / xóa
 
-Giữ (nghiệp vụ): voting pipeline, gallery margin, attendance rules, MediaPipe client, decode 2 đường, provider chain.
-Xóa: `IoUTracker`, ONNX/NMS/letterbox tay, MiniFAS tay. ~200 dòng.
+Giữ (nghiệp vụ): voting pipeline, gallery margin, attendance rules, MediaPipe client, decode 2 đường, provider chain, `IoUTracker`.
+Xóa: ONNX/NMS/letterbox tay, MiniFAS tay. ~200 dòng.
 
 ## 6. Steps (thứ tự nghiêm ngặt, tránh vỡ pipeline)
 
-1. Deps `trackers` vào `pyproject.toml`. Lý do: `pipeline` phụ thuộc signature mới.
-2. Viết lại `tracks.py` bằng `ByteTrackTracker`.
-3. Chuyển `uniform_engine.py` sang `YOLO()` + `from_ultralytics`. Xóa đường ONNX tay.
-4. Sửa `face_engine.py` addons observe, sau đó gọn `liveness.py`. Pipeline đọc `face.live_score` trực tiếp.
-5. Kiểm WS + kiosk 60 FPS.
+1. Giữ `tracks.py` IoU hiện tại; vote per-sid + done scope in/out (Task 5).
+2. Chuyển `uniform_engine.py` sang `YOLO()` + `from_ultralytics`. Xóa đường ONNX tay.
+3. Sửa `face_engine.py` addons observe, sau đó gọn `liveness.py`. Pipeline đọc `face.live_score` trực tiếp.
+4. Kiểm WS + kiosk 60 FPS.
 
 ## 7. Verify
 
