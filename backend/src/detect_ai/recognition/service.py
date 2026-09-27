@@ -194,6 +194,12 @@ async def commit_decisions(db, schedule_id: int, teacher_id: int,
                 elapsed = (now - ci).total_seconds() if ci else float("inf")
                 if elapsed >= min_gap_s:
                     att.check_out_time = now
+                    # Đồng phục lúc ra: violation -> False, ok -> True,
+                    # unknown giữ giá trị lúc vào (không phạt oan).
+                    if d.uniform_status == "violation":
+                        att.has_uniform = False
+                    elif d.uniform_status == "ok":
+                        att.has_uniform = True
                     from . import pipeline as _pipe_mod  # import lazy tránh cycle
                     _sess = _pipe_mod._sessions.get(schedule_id)
                     if _sess is not None:

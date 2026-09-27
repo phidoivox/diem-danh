@@ -376,3 +376,33 @@ async def test_commit_no_reinfer_when_det_none(monkeypatch, session_maker_fixtur
             frame_bgr=np.zeros((10, 10, 3), np.uint8))
     assert sid in out["checked_in"]
     assert boom_calls == [], "commit infer lại uniform — phải dùng d.uniform_det (None = không vẽ áo)"
+
+
+@pytest.mark.asyncio
+async def test_checkout_updates_uniform_on_violation(session_maker_fixture, v2_seed):
+    """Check-out violation -> has_uniform False.
+
+    Bug thật (snapshot 6/3_out): nhãn VI PHAM: sai_ao nhưng cột đồng phục
+    vẫn True vì nhánh check-out không đụng has_uniform.
+    """
+    import detect_ai.recognition.service as svc_mod
+    from detect_ai.models.attendance_v2 import Attendance
+    from detect_ai.recognition.pipeline import FaceDecision
+    from sqlalchemy import select
+
+    sid = v2_seed["student_id"]
+    sched = v2_seed["schedule_id"]
+    tid = v2_seed["teacher_id"]
+    d_in = FaceDecision(1, [10, 10, 100, 120], sid, 0.9, 0.2, 0.95, "onnx",
+                        0.9, "CONFIRMED", 2, "unknown", 0.0, None)
+    d_out = FaceDecision(1, [10, 10, 100, 120], sid, 0.9, 0.2, 0.95, "onnx",
+                         0.9, "CONFIRMED", 2, "violation", 0.2, None)
+    async with session_maker_fixture() as db:
+        await svc_mod.commit_decisions(db, sched, tid, [d_in], frame_bgr=None,
+                                       min_gap_minutes=0)
+        await svc_mod.commit_decisions(db, sched, tid, [d_out], frame_bgr=None,
+                                       min_gap_minutes=0)
+        att = (await db.execute(select(Attendance).where(
+            Attendance.schedule_id == sched, Attendance.student_id == sid,
+        ))).scalar_one()
+        assert att.has_uniform is False
