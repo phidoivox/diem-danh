@@ -96,6 +96,8 @@ export default function KioskPage() {
   const [latencyMs, setLatencyMs] = useState<number | null>(null);
   const [gallery, setGallery] = useState<KioskGalleryStatus | null>(null);
   const [resetting, setResetting] = useState(false);
+  // Bump khi WS rớt để effect fallback poll chạy lại (wsOkRef là ref, không trigger re-render).
+  const [wsGeneration, setWsGeneration] = useState(0);
 
   const liveQuery = useQuery({
     queryKey: ["teacher-live", classId],
@@ -517,10 +519,12 @@ export default function KioskPage() {
     ws.onclose = () => {
       wsOkRef.current = false;
       inFlightRef.current = false;
+      if (!dead) setWsGeneration((g) => g + 1);
     };
     ws.onerror = () => {
       wsOkRef.current = false;
       inFlightRef.current = false;
+      if (!dead) setWsGeneration((g) => g + 1);
     };
 
     return () => {
@@ -537,12 +541,15 @@ export default function KioskPage() {
     let dead = false;
     const tick = async () => {
       if (dead) return;
-      await captureAndSend();
-      if (!dead) timerRef.current = setTimeout(tick, intervalRef.current || FALLBACK_POLL_MS);
+      try { await captureAndSend(); }
+      finally {
+        if (dead || wsOkRef.current) return;
+        timerRef.current = setTimeout(tick, intervalRef.current || FALLBACK_POLL_MS);
+      }
     };
     timerRef.current = setTimeout(tick, intervalRef.current || FALLBACK_POLL_MS);
     return () => { dead = true; if (timerRef.current) clearTimeout(timerRef.current); timerRef.current = null; };
-  }, [running, scheduleId, captureAndSend]);
+  }, [running, scheduleId, captureAndSend, wsGeneration]);
 
   useEffect(() => () => stopCamera(), [stopCamera]);
 
