@@ -49,16 +49,13 @@ class Settings(BaseSettings):
     face_max_faces: int = 3  # kiosk cửa lớp: chỉ 3 mặt to nhất, tránh O(N) lag
     spoof_threshold: float = 0.8  # ngưỡng chính chủ InsightFace; < ngưỡng = spoof
     spoof_live_thr: float = 0.8  # >= ngưỡng này mới được vote (ảnh giả chập chờn khó lọt)
-    spoof_spoof_thr: float = 0.65  # < ngưỡng này mới tính 1 lần "nghi spoof"
     spoof_min_frames: int = 2  # cần N lần nghi liên tiếp mới chốt SPOOF (chống flicker)
-    spoof_window_s: float = 2.0  # cửa sổ trượt cho lịch sử điểm liveness
     spoof_quality_min: float = 0.35  # quality_of() dưới ngưỡng -> UNSURE, không chạy liveness
     spoof_model: str = ""  # rỗng = tự tìm ~/.insightface/addons/liveness.onnx
     face_gallery_cache_ttl_s: int = 300  # TTL cache gallery theo lớp
     # Kiosk fast-path: ảnh gửi lên tối đa 480px, server resize trước infer.
     kiosk_max_width: int = 480
     kiosk_interval_ms: int = 450  # client gửi mỗi ~450ms, 1 in-flight
-    kiosk_spoof_cache_s: float = 10.0  # spoof 1 lần/track trong 10s, không chặn lần 1
 
     # ===== Tầng CSDL =====
     # 0 = tự chọn theo chế độ (SQLite / Postgres thường / Supabase)
@@ -140,15 +137,12 @@ FACE_MIN_SIZE = max(20, int(S.face_min_size))
 FACE_MAX_FACES = max(1, int(S.face_max_faces))
 SPOOF_THRESHOLD = float(S.spoof_threshold)
 SPOOF_LIVE_THR = float(S.spoof_live_thr or S.spoof_threshold)
-SPOOF_SPOOF_THR = float(S.spoof_spoof_thr)
 SPOOF_MIN_FRAMES = max(1, int(S.spoof_min_frames))
-SPOOF_WINDOW_S = max(0.5, float(S.spoof_window_s))
 SPOOF_QUALITY_MIN = float(S.spoof_quality_min)
 SPOOF_MODEL = (S.spoof_model or "").strip()
 FACE_GALLERY_CACHE_TTL_S = max(30, int(S.face_gallery_cache_ttl_s))
 KIOSK_MAX_WIDTH = max(320, int(S.kiosk_max_width))
 KIOSK_INTERVAL_MS = max(120, int(S.kiosk_interval_ms))
-KIOSK_SPOOF_CACHE_S = max(2.0, float(S.kiosk_spoof_cache_s))
 
 UNIFORM_CLASSES = [
     "person",
