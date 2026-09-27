@@ -316,3 +316,21 @@ def test_uniform_predict_once_per_frame(monkeypatch):
     sess.process(img, gal, now=1000.0, run_uniform=None, uniform_predict=frame_predict)
     sess.process(img, gal, now=1000.8, run_uniform=None, uniform_predict=frame_predict)
     assert calls == [1, 1]
+
+
+def test_vote_survives_track_id_change(monkeypatch):
+    from detect_ai.recognition import pipeline as pipe_mod
+    from detect_ai.recognition.config import RecognitionConfig
+    gal = _gallery()
+    eng = _FakeFaceEngine(_make_face(_vec(7)))
+    monkeypatch.setattr(pipe_mod.live_mod, "check_live",
+                        lambda img, kps=None, bbox=None, **kw: LiveVerdict("live", 0.95, "onnx", "ok"))
+    cfg = RecognitionConfig(vote_n=2, vote_window_s=4.0, spoof_min_frames=5)
+    sess = KioskSession(schedule_id=202, face=eng, cfg=cfg)
+    img = np.zeros((480, 640, 3), np.uint8)
+    d1 = sess.process(img, gal, now=1000.0)[0]
+    assert d1.decision == "PROVISIONAL"
+    # Giả lập tracker cấp ID mới (mặt quay đầu): xóa tracks
+    sess.tracker._tracks.clear()
+    d2 = sess.process(img, gal, now=1000.8)[0]
+    assert d2.decision == "CONFIRMED" and d2.student_id == 1

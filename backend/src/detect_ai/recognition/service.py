@@ -207,6 +207,10 @@ async def commit_decisions(db, schedule_id: int, teacher_id: int,
                 elapsed = (now - ci).total_seconds() if ci else float("inf")
                 if elapsed >= min_gap_s:
                     att.check_out_time = now
+                    from . import pipeline as _pipe_mod  # import lazy tránh cycle
+                    _sess = _pipe_mod._sessions.get(schedule_id)
+                    if _sess is not None:
+                        _sess.done_students.discard(sid)
                     if frame_bgr is not None:
                         try:
                             uniform_det = d.uniform_det if d.uniform_det is not None else _detect_uniform(frame_bgr)

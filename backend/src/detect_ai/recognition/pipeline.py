@@ -51,7 +51,6 @@ class FaceDecision:
 @dataclass
 class _Track:
     tid: int
-    votes: deque = field(default_factory=deque)  # deque[(ts, student_id)]
     checked_student: int | None = None
     last_seen: float = 0.0
     spoof_streak: int = 0
@@ -79,6 +78,7 @@ class KioskSession:
         self.tracker = IoUTracker(iou_thr=self.cfg.track_iou_thr, ttl_s=self.cfg.track_ttl_s)
         self.tracks: dict[int, _Track] = {}
         self.done_students: set[int] = set()
+        self.votes_by_sid: dict[int, deque] = {}
         self.created_at = created_at or time.monotonic()
         self.frames = 0
         self._lock = threading.Lock()
@@ -148,12 +148,13 @@ class KioskSession:
                     out.append(FaceDecision(tid, [x1, y1, x2, y2], sid, m.score, m.margin,
                                             0.0, vd.backend, q, "REJECTED"))
                     continue
+                dq = self.votes_by_sid.setdefault(sid, deque()) if sid is not None else deque()
                 if vd.verdict == "rejected":
                     out.append(FaceDecision(tid, [x1, y1, x2, y2], sid, m.score, m.margin,
-                                            tr.live_score, vd.backend, q, "PROVISIONAL", len(tr.votes)))
+                                            tr.live_score, vd.backend, q, "PROVISIONAL", len(dq)))
                     continue
                 # Smoothing: EMA + streak (gọn hơn code cũ, nằm 1 chỗ)
-                if len(tr.votes) == 0 and tr.spoof_streak == 0 and tr.live_ema == 1.0:
+                if len(dq) == 0 and tr.spoof_streak == 0 and tr.live_ema == 1.0:
                     tr.live_ema = float(vd.score)
                 else:
                     tr.live_ema = 0.6 * float(vd.score) + 0.4 * float(tr.live_ema)
@@ -163,23 +164,23 @@ class KioskSession:
                     tr.spoof_streak = 0
                 tr.live_score, tr.live_backend = float(vd.score), vd.backend
                 if tr.spoof_streak >= max(1, cfg.spoof_min_frames):
-                    tr.votes.clear()
+                    dq.clear()
                     out.append(FaceDecision(tid, [x1, y1, x2, y2], sid, m.score, m.margin,
                                             float(vd.score), vd.backend, q, "SPOOF"))
                     continue
                 if vd.verdict == "challenge":
                     out.append(FaceDecision(tid, [x1, y1, x2, y2], sid, m.score, m.margin,
-                                            float(vd.score), vd.backend, q, "CHALLENGE", len(tr.votes)))
+                                            float(vd.score), vd.backend, q, "CHALLENGE", len(dq)))
                     continue
                 if vd.verdict == "spoof" or tr.live_ema < cfg.spoof_live_thr:
                     out.append(FaceDecision(tid, [x1, y1, x2, y2], sid, m.score, m.margin,
-                                            float(vd.score), vd.backend, q, "PROVISIONAL", len(tr.votes)))
+                                            float(vd.score), vd.backend, q, "PROVISIONAL", len(dq)))
                     continue
-                # Vote
-                tr.votes.append((now, sid))
-                while tr.votes and now - tr.votes[0][0] > cfg.vote_window_s:
-                    tr.votes.popleft()
-                n = sum(1 for _, s in tr.votes if s == sid)
+                # Vote per-sid: sống qua đổi track ID (quay đầu/che)
+                dq.append(now)
+                while dq and now - dq[0] > cfg.vote_window_s:
+                    dq.popleft()
+                n = len(dq)
                 # Uniform run-once khi sắp chốt (vote >= N-1) hoặc đã chốt
                 u_status, u_score = "unknown", 0.0
                 u_det = None
