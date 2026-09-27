@@ -285,3 +285,24 @@ def test_orm_v2_columns_mapped():
     assert "det_score" in FaceEmbedding.__table__.columns
     assert "margin" in FaceEvent.__table__.columns
     assert "backend" in FaceEvent.__table__.columns
+
+
+def test_uniform_predict_once_per_frame(monkeypatch):
+    from detect_ai.recognition import pipeline as pipe_mod
+    from detect_ai.recognition.config import RecognitionConfig
+    gal = _gallery()
+    eng = _FakeFaceEngine(_make_face(_vec(7)))
+    monkeypatch.setattr(pipe_mod.live_mod, "check_live",
+                        lambda img, kps=None, bbox=None, **kw: LiveVerdict("live", 0.95, "onnx", "ok"))
+    calls: list = []
+    class FakeDet:
+        names = ["person", "valid_shirt", "invalid_shirt"]
+    def frame_predict(img):
+        calls.append(1)
+        return FakeDet()
+    cfg = RecognitionConfig(vote_n=2, vote_window_s=4.0, spoof_min_frames=5)
+    sess = KioskSession(schedule_id=201, face=eng, cfg=cfg)
+    img = np.zeros((480, 640, 3), np.uint8)
+    sess.process(img, gal, now=1000.0, run_uniform=None, uniform_predict=frame_predict)
+    sess.process(img, gal, now=1000.8, run_uniform=None, uniform_predict=frame_predict)
+    assert calls == [1, 1]
