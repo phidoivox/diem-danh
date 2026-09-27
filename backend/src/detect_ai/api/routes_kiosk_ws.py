@@ -40,7 +40,13 @@ from ..services.settings_repo import load_min_checkout_gap
 router = APIRouter()
 
 
-async def _auth_teacher(token: str | None) -> User | None:
+async def _auth_teacher(token: str | None, protocols: str | None = None) -> User | None:
+    if not token and protocols:
+        for p in protocols.split(","):
+            p = p.strip()
+            if p.startswith("jwt-"):
+                token = p[4:]
+                break
     if not token:
         return None
     try:
@@ -77,7 +83,7 @@ async def kiosk_ws(ws: WebSocket):
         await ws.send_json({"error": "schedule_id không hợp lệ"})
         await ws.close()
         return
-    teacher = await _auth_teacher(params.get("token"))
+    teacher = await _auth_teacher(params.get("token"), ws.headers.get("sec-websocket-protocol"))
     if teacher is None:
         await ws.send_json({"error": "token giáo viên không hợp lệ"})
         await ws.close()

@@ -235,10 +235,14 @@ export interface StudentAttendance {
   end_time: string;
   check_in_time: string | null;
   check_out_time: string | null;
+  check_in_snapshot_url?: string | null;
+  check_out_snapshot_url?: string | null;
   has_uniform: boolean;
   status: "PRESENT" | "LATE" | "HALF_ABSENT" | "ABSENT" | "EXCUSED" | string;
   note: string | null;
   snapshot_url: string | null;
+  /** Tổng biến động điểm rèn luyện của buổi này. null = chưa chấm điểm. */
+  point_delta?: number | null;
 }
 
 export interface ConductLedgerEntry {
@@ -333,9 +337,13 @@ export interface LiveAttendanceStudent {
   class_name: string;
   check_in_time: string | null;
   check_out_time: string | null;
+  check_in_snapshot_url?: string | null;
+  check_out_snapshot_url?: string | null;
   has_uniform: boolean;
   status: "PRESENT" | "LATE" | "HALF_ABSENT" | "ABSENT" | "EXCUSED" | string;
   is_manual_override: boolean;
+  /** Nguồn điểm danh: face | manual | teacher | none (backend >= face-kiosk). */
+  source?: string;
 }
 
 export interface LiveAttendanceResponse {
@@ -477,6 +485,138 @@ export async function manualOverrideAttendance(
   });
 }
 
+// =====================================================================
+// Lịch sử điểm danh của 1 sinh viên trong 1 lớp học phần (từng môn)
+// =====================================================================
+export interface StudentHistoryItem {
+  schedule_id: number;
+  study_date: string;
+  start_time: string;
+  end_time: string;
+  session_order: number;
+  room_name: string;
+  attendance_id: number | null;
+  check_in_time: string | null;
+  check_out_time: string | null;
+  check_in_snapshot_url?: string | null;
+  check_out_snapshot_url?: string | null;
+  has_uniform: boolean;
+  status: string;
+  is_manual_override: boolean;
+  source?: string;
+  note?: string | null;
+  /** Tổng biến động điểm rèn luyện của buổi này. null = chưa chấm điểm. */
+  point_delta?: number | null;
+}
+
+export interface StudentHistoryResponse {
+  class_id: number;
+  class_code: string;
+  course_name: string;
+  student_id: number;
+  student_code: string;
+  full_name: string;
+  summary: {
+    total_sessions: number;
+    present: number;
+    late: number;
+    half_absent: number;
+    absent: number;
+    excused: number;
+    total_deducted?: number;
+  };
+  items: StudentHistoryItem[];
+}
+
+export async function getStudentAttendanceHistory(
+  classId: number,
+  studentId: number
+): Promise<StudentHistoryResponse> {
+  return authFetch<StudentHistoryResponse>(
+    `/api/v1/teacher/classes/${classId}/students/${studentId}/attendance-history`
+  );
+}
+
+// =====================================================================
+// Face Kiosk (điểm danh khuôn mặt tại cửa lớp)
+// =====================================================================
+export interface KioskFaceBox {
+  track_id: number;
+  bbox: number[];
+  student_id: number | null;
+  user_code: string | null;
+  full_name: string | null;
+  score: number;
+  liveness: number;
+  decision: string;
+}
+
+export interface KioskCheckinResponse {
+  schedule_id: number;
+  checked_in: number[];
+  checked_out?: number[];
+  already_done?: number[];
+  faces: KioskFaceBox[];
+  gallery_size: number;
+  next_interval_ms?: number;
+  next_width?: number;
+}
+
+export function kioskWsUrl(scheduleId: number): string {
+  const token = getToken() || "";
+  const base = API.replace(/^http/, "ws");
+  return `${base}/api/v1/kiosk/ws?schedule_id=${scheduleId}&token=${encodeURIComponent(token)}`;
+}
+export function kioskWsProtocols(): string[] {
+  const token = getToken() || "";
+  return token ? [`jwt-${token}`] : [];
+}
+
+export interface KioskGalleryStatus {
+  class_id: number;
+  total: number;
+  enrolled: number;
+  gallery_vectors: number;
+  students: {
+    student_id: number;
+    user_code: string;
+    full_name: string;
+    embeddings: number;
+    enrolled: boolean;
+  }[];
+}
+
+export async function kioskCheckin(scheduleId: number, frameBlob: Blob): Promise<KioskCheckinResponse> {
+  const form = new FormData();
+  form.append("schedule_id", String(scheduleId));
+  form.append("frame", frameBlob, "frame.jpg");
+  return authFetch<KioskCheckinResponse>("/api/v1/kiosk/checkin", {
+    method: "POST",
+    body: form,
+  });
+}
+
+export async function getKioskGalleryStatus(classId: number): Promise<KioskGalleryStatus> {
+  return authFetch<KioskGalleryStatus>(`/api/v1/kiosk/gallery-status?class_id=${classId}`);
+}
+
+export async function kioskBackfill(classId: number): Promise<{
+  class_id: number;
+  enrolled: number;
+  already: number;
+  failed: { user_code: string; reason: string }[];
+}> {
+  const form = new FormData();
+  form.append("class_id", String(classId));
+  return authFetch("/api/v1/kiosk/backfill", { method: "POST", body: form });
+}
+
+export async function kioskResetSession(scheduleId: number): Promise<{ ok: boolean }> {
+  const form = new FormData();
+  form.append("schedule_id", String(scheduleId));
+  return authFetch("/api/v1/kiosk/reset-session", { method: "POST", body: form });
+}
+
 export async function getTeacherLeaveRequests(params?: {
   status?: string;
   class_id?: number;
@@ -540,6 +680,7 @@ export interface AdminStudentProfile {
   id: number;
   user_id: number;
   total_point: number;
+  admin_class_id?: number | null;
   class_name: string;
   major: string;
 }
@@ -573,9 +714,46 @@ export interface AdminUserPage {
   size: number;
 }
 
+export interface AdminCourse {
+  id: number;
+  course_code: string;
+  course_name: string;
+  credits: number;
+  default_sessions: number;
+  description?: string | null;
+  created_at?: string | null;
+}
+
+export interface AdminCoursePage {
+  items: AdminCourse[];
+  total: number;
+  page: number;
+  size: number;
+}
+
+export interface AdminAdministrativeClass {
+  id: number;
+  class_code: string;
+  academic_year: string;
+  faculty: string;
+  homeroom_teacher_id?: number | null;
+  homeroom_teacher_name?: string;
+  student_count: number;
+  created_at?: string | null;
+}
+
+export interface AdminAdministrativeClassPage {
+  items: AdminAdministrativeClass[];
+  total: number;
+  page: number;
+  size: number;
+}
+
 export interface AdminClass {
   id: number;
   class_code: string;
+  course_id?: number;
+  course_code?: string;
   course_name: string;
   teacher_id: number;
   teacher_name: string;
@@ -682,10 +860,10 @@ export async function deleteAdminUser(id: number): Promise<{ ok: boolean; messag
 export async function uploadUserAvatar(
   id: number,
   file: File
-): Promise<{ ok: boolean; user_id: number; avatar_url?: string | null }> {
+): Promise<{ ok: boolean; user_id: number; avatar_url?: string | null; face_status?: string }> {
   const fd = new FormData();
   fd.append("photo", file);
-  return authFetch<{ ok: boolean; user_id: number; avatar_url?: string | null }>(
+  return authFetch<{ ok: boolean; user_id: number; avatar_url?: string | null; face_status?: string }>(
     `/api/v1/admin/users/${id}/avatar`,
     {
       method: "POST",
@@ -694,6 +872,127 @@ export async function uploadUserAvatar(
   );
 }
 
+/** Admin đăng ký thêm ảnh khuôn mặt (FaceID) cho SV — không đổi avatar hiển thị. */
+export async function kioskEnrollFace(
+  userId: number,
+  file: File
+): Promise<{ ok: boolean; user_id: number; embedding_id: number; quality: number }> {
+  const fd = new FormData();
+  fd.append("photo", file);
+  return authFetch(`/api/v1/kiosk/enroll/${userId}`, { method: "POST", body: fd });
+}
+
+export async function getStudentClassNames(): Promise<string[]> {
+  return authFetch<string[]>("/api/v1/admin/users/class-names");
+}
+
+/** Danh sách lớp sinh hoạt (mã lớp + sĩ số) cho dropdown chọn lớp khi tạo/sửa SV. */
+export async function getStudentAdministrativeClassOptions(): Promise<AdminAdministrativeClass[]> {
+  const page = await authFetch<AdminAdministrativeClassPage>(
+    "/api/v1/admin/academic/administrative-classes?size=500"
+  );
+  return page.items ?? [];
+}
+
+// =====================================================================
+// Courses (Học phần / Môn học)
+// =====================================================================
+export async function getAdminCourses(params?: {
+  page?: number;
+  size?: number;
+  q?: string;
+}): Promise<AdminCoursePage> {
+  const qs = buildQuery({ page: params?.page, size: params?.size, q: params?.q });
+  return authFetch<AdminCoursePage>(`/api/v1/admin/academic/courses${qs}`);
+}
+
+export async function createAdminCourse(data: {
+  course_code: string;
+  course_name: string;
+  credits?: number;
+  default_sessions?: number;
+  description?: string;
+}): Promise<AdminCourse> {
+  return authFetch<AdminCourse>("/api/v1/admin/academic/courses", {
+    method: "POST",
+    body: JSON.stringify(data),
+  });
+}
+
+export async function updateAdminCourse(
+  id: number,
+  data: {
+    course_code?: string;
+    course_name?: string;
+    credits?: number;
+    default_sessions?: number;
+    description?: string;
+  }
+): Promise<AdminCourse> {
+  return authFetch<AdminCourse>(`/api/v1/admin/academic/courses/${id}`, {
+    method: "PUT",
+    body: JSON.stringify(data),
+  });
+}
+
+export async function deleteAdminCourse(id: number): Promise<{ ok: boolean; message: string }> {
+  return authFetch<{ ok: boolean; message: string }>(`/api/v1/admin/academic/courses/${id}`, {
+    method: "DELETE",
+  });
+}
+
+// =====================================================================
+// Administrative Classes (Lớp sinh hoạt / Lớp niên chế)
+// =====================================================================
+export async function getAdminAdministrativeClasses(params?: {
+  page?: number;
+  size?: number;
+  q?: string;
+}): Promise<AdminAdministrativeClassPage> {
+  const qs = buildQuery({ page: params?.page, size: params?.size, q: params?.q });
+  return authFetch<AdminAdministrativeClassPage>(`/api/v1/admin/academic/administrative-classes${qs}`);
+}
+
+export async function createAdminAdministrativeClass(data: {
+  class_code: string;
+  academic_year?: string;
+  faculty?: string;
+  homeroom_teacher_id?: number | null;
+}): Promise<AdminAdministrativeClass> {
+  return authFetch<AdminAdministrativeClass>("/api/v1/admin/academic/administrative-classes", {
+    method: "POST",
+    body: JSON.stringify(data),
+  });
+}
+
+export async function updateAdminAdministrativeClass(
+  id: number,
+  data: {
+    class_code?: string;
+    academic_year?: string;
+    faculty?: string;
+    homeroom_teacher_id?: number | null;
+  }
+): Promise<AdminAdministrativeClass> {
+  return authFetch<AdminAdministrativeClass>(`/api/v1/admin/academic/administrative-classes/${id}`, {
+    method: "PUT",
+    body: JSON.stringify(data),
+  });
+}
+
+export async function deleteAdminAdministrativeClass(id: number): Promise<{ ok: boolean; message: string }> {
+  return authFetch<{ ok: boolean; message: string }>(`/api/v1/admin/academic/administrative-classes/${id}`, {
+    method: "DELETE",
+  });
+}
+
+export async function getAdminAdministrativeClassStudents(id: number): Promise<StudentInClass[]> {
+  return authFetch<StudentInClass[]>(`/api/v1/admin/academic/administrative-classes/${id}/students`);
+}
+
+// =====================================================================
+// Classes (Lớp học phần)
+// =====================================================================
 export async function getAdminClasses(params?: {
   page?: number;
   size?: number;
@@ -748,6 +1047,25 @@ export async function removeStudentFromClass(
     `/api/v1/admin/academic/classes/${classId}/students/${studentId}`,
     {
       method: "DELETE",
+    }
+  );
+}
+
+export async function addStudentsToClassBulk(
+  classId: number,
+  studentIds: number[],
+  classNames?: string[],
+  adminClassIds?: number[]
+): Promise<{ ok: boolean; enrolled: number[]; skipped: number[] }> {
+  return authFetch<{ ok: boolean; enrolled: number[]; skipped: number[] }>(
+    `/api/v1/admin/academic/classes/${classId}/students/bulk`,
+    {
+      method: "POST",
+      body: JSON.stringify({
+        student_ids: studentIds,
+        class_names: classNames ?? [],
+        admin_class_ids: adminClassIds ?? [],
+      }),
     }
   );
 }

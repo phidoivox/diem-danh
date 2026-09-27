@@ -11,6 +11,7 @@ import {
   getToken,
   kioskCheckin,
   kioskResetSession,
+  kioskWsProtocols,
   kioskWsUrl,
   KioskFaceBox,
   KioskGalleryStatus,
@@ -23,6 +24,7 @@ import {
 } from "@/lib/kiosk-decisions";
 import {
   getClientFaceDetector,
+  closeClientFaceDetector,
   LocalFaceBox,
   matchServerIdentities,
 } from "@/lib/face-detector";
@@ -53,7 +55,7 @@ export default function KioskPage() {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const streamRef = useRef<MediaStream | null>(null);
   const busyRef = useRef(false);
-  const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const wsRef = useRef<WebSocket | null>(null);
   const wsOkRef = useRef(false);
   // Adaptive do server dặn: infer chậm -> gửi thưa + ảnh nhỏ lại.
@@ -222,7 +224,7 @@ export default function KioskPage() {
         [...fresh.map((f) => ({ name: f.full_name || "", code: f.user_code || "", time: nowStr, score: f.score })), ...prev].slice(0, 20)
       );
     } else {
-      const verifying = stabilized.find((f) => (f.decision === "VERIFYING" || f.decision === "CHALLENGE") && f.full_name);
+      const verifying = stabilized.find((f) => f.decision === "VERIFYING" && f.full_name);
       if (verifying) {
         setCurrent({
           name: verifying.full_name || "",
@@ -323,6 +325,7 @@ export default function KioskPage() {
     if (timeoutTimerRef.current) clearTimeout(timeoutTimerRef.current);
     if (nextSendTimerRef.current) clearTimeout(nextSendTimerRef.current);
     inFlightRef.current = false;
+    closeClientFaceDetector().catch(() => {});
     try { wsRef.current?.close(); } catch { /* ignore */ }
     wsRef.current = null;
     wsOkRef.current = false;
@@ -408,7 +411,7 @@ export default function KioskPage() {
     const token = getToken();
     if (!token) return;
     try {
-      ws = new WebSocket(kioskWsUrl(scheduleId));
+      ws = new WebSocket(kioskWsUrl(scheduleId), kioskWsProtocols());
       wsRef.current = ws;
     } catch {
       wsOkRef.current = false;
@@ -459,6 +462,8 @@ export default function KioskPage() {
       if (dead) return;
       wsOkRef.current = true;
       inFlightRef.current = false;
+      if (timerRef.current) clearTimeout(timerRef.current);
+      timerRef.current = null;
       sendFrame();
     };
 
@@ -467,13 +472,13 @@ export default function KioskPage() {
       try {
         const msg = JSON.parse(ev.data);
         if (msg.error) return;
+        if (msg.next_interval_ms) intervalRef.current = Math.max(120, Math.min(msg.next_interval_ms, 600));
         if (timeoutTimerRef.current) clearTimeout(timeoutTimerRef.current);
         inFlightRef.current = false;
 
         // Tính độ trễ RTT thực tế của frame vừa nhận
         const now = performance.now();
         const rtt = sentAtRef.current > 0 ? Math.round(now - sentAtRef.current) : (msg.infer_ms ?? null);
-        if (msg.next_interval_ms) intervalRef.current = msg.next_interval_ms;
         if (msg.next_width) widthRef.current = msg.next_width;
 
         handleFaces(msg.faces || [], rtt);
@@ -501,7 +506,7 @@ export default function KioskPage() {
         }
 
         // Ping-Pong: sau khi nhận kết quả, gửi frame tiếp theo sau khoảng throttle ngắn
-        const throttle = Math.max(30, Math.min(intervalRef.current || 150, 120));
+        const throttle = Math.max(60, Math.min(intervalRef.current || 450, 600));
         if (nextSendTimerRef.current) clearTimeout(nextSendTimerRef.current);
         nextSendTimerRef.current = setTimeout(sendFrame, throttle);
       } catch {
@@ -528,14 +533,15 @@ export default function KioskPage() {
   }, [running, scheduleId, handleFaces]);
 
   useEffect(() => {
-    if (running && scheduleId && !wsOkRef.current) {
-      // Fallback HTTP khi chưa có WS: dùng interval adaptive.
-      timerRef.current = setInterval(captureAndSend, intervalRef.current || FALLBACK_POLL_MS);
-    }
-    return () => {
-      if (timerRef.current) clearInterval(timerRef.current);
-      timerRef.current = null;
+    if (!running || !scheduleId || wsOkRef.current) return;
+    let dead = false;
+    const tick = async () => {
+      if (dead) return;
+      await captureAndSend();
+      if (!dead) timerRef.current = setTimeout(tick, intervalRef.current || FALLBACK_POLL_MS);
     };
+    timerRef.current = setTimeout(tick, intervalRef.current || FALLBACK_POLL_MS);
+    return () => { dead = true; if (timerRef.current) clearTimeout(timerRef.current); timerRef.current = null; };
   }, [running, scheduleId, captureAndSend]);
 
   useEffect(() => () => stopCamera(), [stopCamera]);
