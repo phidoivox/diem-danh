@@ -137,12 +137,21 @@ async def commit_decisions(db, schedule_id: int, teacher_id: int,
     changed = False
     min_gap_s = max(0, int(min_gap_minutes)) * 60
 
+    # Batch SELECT 1 lần: N+1 -> 1 query cho mọi CONFIRMED trong frame.
+    decisions = list(decisions)
+    sids = sorted({int(d.student_id) for d in decisions
+                   if d.decision == "CONFIRMED" and d.student_id})
+    by_sid = {}
+    if sids:
+        rows = (await db.execute(select(Attendance).where(
+            Attendance.schedule_id == schedule_id,
+            Attendance.student_id.in_(sids)))).scalars().all()
+        by_sid = {a.student_id: a for a in rows}
+
     for d in decisions:
         if d.decision == "CONFIRMED" and d.student_id:
             sid = int(d.student_id)
-            att = (await db.execute(select(Attendance).where(
-                Attendance.schedule_id == schedule_id, Attendance.student_id == sid,
-            ))).scalar_one_or_none()
+            att = by_sid.get(sid)
             # Uniform run-once: has_uniform từ pipeline (unknown -> giữ True để không phạt oan)
             has_uniform = True if d.uniform_status in ("ok", "unknown") else False
             note = "face-kiosk-v2"
@@ -156,12 +165,14 @@ async def commit_decisions(db, schedule_id: int, teacher_id: int,
                     snap = _img_svc.save_attendance_snapshot(
                         frame_bgr, d.bbox, schedule_id, sid, "in",
                         uniform_det=uniform_det, uniform_status=d.uniform_status)
-                db.add(Attendance(
+                att_new = Attendance(
                     schedule_id=schedule_id, student_id=sid,
                     check_in_time=now, has_uniform=has_uniform, status=AttendanceStatus.PRESENT,
                     note=note, updated_by=teacher_id,
                     check_in_snapshot_url=snap,
-                ))
+                )
+                db.add(att_new)
+                by_sid[sid] = att_new
                 checked_in.append(sid)
                 changed = True
                 db.add(FaceEvent(schedule_id=schedule_id, student_id=sid,

@@ -111,16 +111,17 @@ async def bump_db_version(db, class_id: int) -> int | None:
 
 
 async def load_gallery(db, class_id: int, ttl_s: int = 300, force: bool = False) -> Gallery:
+    # TTL trước version check: cache hit -> return, tránh 1 SELECT version/frame.
     now = time.monotonic()
+    hit = _cache.get(class_id)
+    if not force and hit and now - hit[0] < max(30, ttl_s):
+        return hit[2]
     pg = _is_postgres(db)
     if pg and not force:
         db_ver = await fetch_db_version(db, class_id)
         ver = db_ver if db_ver is not None else current_version(class_id)
     else:
         ver = current_version(class_id)
-    hit = _cache.get(class_id)
-    if not force and hit and hit[1] == ver and now - hit[0] < max(30, ttl_s):
-        return hit[2]
     if pg:
         gal = await _load_postgres(db, class_id, ver if ver is not None else 0, now)
     else:

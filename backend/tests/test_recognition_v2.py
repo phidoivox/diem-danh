@@ -245,7 +245,7 @@ async def test_v2_checkin_endpoint_idempotent(make_client, session_maker_fixture
                             "CONFIRMED", 3, "ok", 0.95)]
 
     class FakeSession:
-        def process(self, img, gallery, now=None, run_uniform=None):
+        def process(self, img, gallery, now=None, run_uniform=None, uniform_predict=None):
             return decisions
 
     from detect_ai.recognition import pipeline as pipe_mod
@@ -274,6 +274,16 @@ async def test_v2_checkin_endpoint_idempotent(make_client, session_maker_fixture
         n = (await s.execute(select(func.count()).select_from(Attendance).where(
             Attendance.schedule_id == v2_seed["schedule_id"]))).scalar_one()
         assert n == 1
+
+
+def test_commit_two_faces_same_student_one_row():
+    # 2 FaceDecision CONFIRMED cùng sid trong 1 frame -> commit 1 lần SELECT batch,
+    # không insert 2 row (unique guard). Test ở mức dict: dựng decisions giả.
+    from detect_ai.recognition.pipeline import FaceDecision
+    ds = [FaceDecision(1, [10, 10, 100, 120], 5, 0.9, 0.2, 0.95, "onnx", 0.9, "CONFIRMED", 2, "ok", 0.95),
+          FaceDecision(2, [200, 200, 300, 320], 5, 0.88, 0.2, 0.94, "onnx", 0.9, "CONFIRMED", 2, "ok", 0.95)]
+    sids = sorted({int(d.student_id) for d in ds if d.decision == "CONFIRMED" and d.student_id})
+    assert sids == [5]
 
 
 def test_orm_v2_columns_mapped():
