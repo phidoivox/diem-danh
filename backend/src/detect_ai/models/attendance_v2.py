@@ -6,6 +6,7 @@ from sqlalchemy import (
     Boolean,
     DateTime,
     Enum as SQLEnum,
+    Float,
     ForeignKey,
     Index,
     Integer,
@@ -45,11 +46,17 @@ class Attendance(Base):
         DateTime(timezone=True), nullable=True
     )
     has_uniform: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+    uniform_score: Mapped[float] = mapped_column(Float, default=0.0, nullable=False)
+    uniform_status: Mapped[str] = mapped_column(String(20), default="unknown", nullable=False)
     status: Mapped[AttendanceStatus] = mapped_column(
         SQLEnum(
             AttendanceStatus,
             name="attendance_status",
             native_enum=False,
+            # create_constraint: native_enum=False một mình chỉ cho ra VARCHAR trần,
+            # mất hẳn kiểm tra giá trị mà ENUM native của Postgres vẫn có. Bật lên để
+            # cả SQLite lẫn Postgres đều có CHECK (status IN (...)).
+            create_constraint=True,
             values_callable=lambda x: [e.value for e in x],
         ),
         default=AttendanceStatus.ABSENT,
@@ -61,6 +68,10 @@ class Attendance(Base):
         DateTime(timezone=True), nullable=True
     )
     note: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
+    # Snapshot khuôn mặt lúc check-in/out (URL local /static/storage/snapshots/...).
+    # Chỉ lưu tối đa 2 ảnh/người/tiết, chụp đúng lúc transition, không lưu mỗi frame.
+    check_in_snapshot_url: Mapped[Optional[str]] = mapped_column(String(500), nullable=True)
+    check_out_snapshot_url: Mapped[Optional[str]] = mapped_column(String(500), nullable=True)
     updated_by: Mapped[Optional[int]] = mapped_column(
         Integer, ForeignKey("users.id", ondelete="SET NULL"), nullable=True
     )
