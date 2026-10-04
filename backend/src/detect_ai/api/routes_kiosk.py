@@ -35,12 +35,7 @@ from ..recognition.image import ImageDecodeError, decode_frame, decode_strict
 from ..services import face_service
 from ..services.settings_repo import load_min_checkout_gap
 from .deps_auth import require_admin, require_teacher
-
-from zoneinfo import ZoneInfo
-_VN_TZ = ZoneInfo("Asia/Ho_Chi_Minh")
-def _today_vn():
-    from datetime import datetime
-    return datetime.now(_VN_TZ).date()
+from .deps_kiosk import adaptive_feedback, authorize_kiosk_schedule
 
 router = APIRouter(prefix="/api/v1/kiosk", tags=["kiosk"])
 
@@ -86,21 +81,7 @@ def _lock_for(schedule_id: int) -> asyncio.Lock:
 
 
 async def _get_schedule_for_teacher(db: AsyncSession, schedule_id: int, teacher_id: int) -> Schedule:
-    stmt = (
-        select(Schedule)
-        .options(selectinload(Schedule.clazz).selectinload(Class.course))
-        .where(Schedule.id == schedule_id)
-    )
-    sched = (await db.execute(stmt)).scalar_one_or_none()
-    if not sched:
-        raise HTTPException(status.HTTP_404_NOT_FOUND, "Không tìm thấy buổi học")
-    if not sched.clazz or sched.clazz.teacher_id != teacher_id:
-        raise HTTPException(status.HTTP_403_FORBIDDEN, "Bạn không quản lý buổi học này")
-    # Chỉ mở điểm danh khi có tiết: đúng ngày học mới cho kiosk chạy.
-    # Sửa tay (manual-override) vẫn cho phép ngoài giờ.
-    if sched.study_date != _today_vn():
-        raise HTTPException(status.HTTP_403_FORBIDDEN, "Hôm nay lớp không có tiết — điểm danh đang đóng")
-    return sched
+    return await authorize_kiosk_schedule(db, schedule_id, teacher_id)
 
 
 @router.post("/checkin", response_model=CheckinResponse)
@@ -157,14 +138,8 @@ async def kiosk_checkin(
         min_gap_minutes=await load_min_checkout_gap(db),
     )
     # Adaptive feedback: infer chậm -> client gửi thưa + ảnh nhỏ lại.
-    base_interval = int(cfg.kiosk_interval_ms)
-    if infer_ms > 800:
-        next_interval, next_width = base_interval + 250, 416
-    elif infer_ms > 500:
-        next_interval, next_width = base_interval + 100, int(cfg.kiosk_max_width)
-    else:
-        next_interval, next_width = base_interval, int(cfg.kiosk_max_width)
-    next_interval = max(120, min(next_interval, 600))
+    next_interval, next_width = adaptive_feedback(
+        int(cfg.kiosk_interval_ms), int(cfg.kiosk_max_width), infer_ms)
     return CheckinResponse(schedule_id=schedule_id,
                            checked_in=checked.get("checked_in", []),
                            checked_out=checked.get("checked_out", []),
@@ -263,12 +238,24 @@ async def backfill_class(
         if await face_service.active_count(db, u.id) > 0:
             skipped += 1
             continue
+        img_bytes = None
         fp = avatar_dir / f"{u.user_code}.jpg"
-        if not fp.exists():
+        if fp.exists():
+            img_bytes = fp.read_bytes()
+        elif u.avatar_url:
+            try:
+                from ..core.supabase import supabase_storage
+                if supabase_storage.is_cloud_enabled:
+                    res = await supabase_storage.client.from_(SupabaseStorageHelper.BUCKET_AVATARS).download(f"{u.user_code}.jpg")
+                    if res:
+                        img_bytes = res
+            except Exception:
+                pass
+        if not img_bytes:
             failed.append({"user_code": u.user_code, "reason": "chưa có avatar"})
             continue
         try:
-            img = decode_strict(fp.read_bytes())
+            img = decode_strict(img_bytes)
             await face_service.enroll_image(db, u.id, img, source="avatar")
             ok += 1
         except face_service.EnrollError as e:

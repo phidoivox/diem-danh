@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from datetime import date, datetime
 from typing import Any, Dict, List, Optional
+from zoneinfo import ZoneInfo
 from fastapi import APIRouter, Depends, HTTPException, Response, status
 from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy import func, select
@@ -9,8 +10,10 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from ..core.deps import get_db
+from ..core.timeutil import today_vn as _today_vn
 from ..models.academic import Class, ClassStudent, Schedule
 from ..models.attendance_v2 import Attendance, AttendanceStatus
+from ..models.point_ledger import PointLedger
 from ..models.user import User
 from ..services.report_service import (
     calculate_class_exam_ban,
@@ -29,6 +32,33 @@ router = APIRouter(
 # =====================================================================
 # SCHEMAS
 # =====================================================================
+
+
+def _current_session(
+    schedules: List[Schedule], now: Optional[datetime] = None
+) -> Optional[Schedule]:
+    """Chọn buổi đang diễn ra (start <= now < end), nếu chưa tới giờ thì
+    lấy buổi sắp tới gần nhất, ngược lại lấy buổi cuối cùng trong ngày.
+
+    Trước đây chỗ này luôn lấy buổi đầu tiên (`.first()` sau `ORDER BY
+    start_time`), nên lớp học cả sáng + chiều thì buổi chiều vẫn dính
+    điểm danh/attendance của buổi sáng.
+    """
+    if not schedules:
+        return None
+    ordered = sorted(schedules, key=lambda s: (s.start_time, s.end_time, s.id))
+    current = (now or datetime.now(_VN_TZ)).time().replace(tzinfo=None)
+    for s in ordered:
+        start = s.start_time.replace(tzinfo=None) if s.start_time else None
+        end = s.end_time.replace(tzinfo=None) if s.end_time else None
+        if start is not None and end is not None and start <= current < end:
+            return s
+    upcoming = [s for s in ordered if s.start_time and s.start_time.replace(tzinfo=None) > current]
+    if upcoming:
+        return upcoming[0]
+    return ordered[-1]
+
+
 class ScheduleBrief(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
@@ -61,9 +91,23 @@ class StudentAttendanceLiveItem(BaseModel):
     class_name: Optional[str] = ""
     check_in_time: Optional[datetime] = None
     check_out_time: Optional[datetime] = None
+    check_in_snapshot_url: Optional[str] = None
+    check_out_snapshot_url: Optional[str] = None
     has_uniform: bool = True
     status: str
     is_manual_override: bool = False
+    # Nguồn điểm danh: face (kiosk khuôn mặt) | manual (GV sửa) | teacher (GV tick) | none.
+    source: str = "none"
+
+
+def _attendance_source(att) -> str:
+    if att is None:
+        return "none"
+    if att.is_manual_override:
+        return "manual"
+    if (att.note or "") and "face-kiosk" in att.note:
+        return "face"
+    return "teacher"
 
 
 class LiveAttendanceResponse(BaseModel):
@@ -97,11 +141,57 @@ class AttendanceDetailResponse(BaseModel):
     student_id: int
     check_in_time: Optional[datetime] = None
     check_out_time: Optional[datetime] = None
+    check_in_snapshot_url: Optional[str] = None
+    check_out_snapshot_url: Optional[str] = None
     has_uniform: bool
     status: str
     is_manual_override: bool
     note: Optional[str] = None
     updated_by: Optional[int] = None
+
+
+class StudentHistoryItem(BaseModel):
+    schedule_id: int
+    study_date: date
+    start_time: str
+    end_time: str
+    session_order: int
+    room_name: str
+    attendance_id: Optional[int] = None
+    check_in_time: Optional[datetime] = None
+    check_out_time: Optional[datetime] = None
+    check_in_snapshot_url: Optional[str] = None
+    check_out_snapshot_url: Optional[str] = None
+    has_uniform: bool = True
+    status: str = "ABSENT"
+    is_manual_override: bool = False
+    source: str = "none"
+    note: Optional[str] = None
+    # Tổng biến động điểm rèn luyện của buổi học này (sum point_ledger
+    # theo schedule_id + student_id). None = chưa được cron chấm điểm.
+    point_delta: Optional[int] = None
+
+
+class StudentHistorySummary(BaseModel):
+    total_sessions: int = 0
+    present: int = 0
+    late: int = 0
+    half_absent: int = 0
+    absent: int = 0
+    excused: int = 0
+    # Tổng điểm bị trừ (cộng gộp các point_delta âm) trong phạm vi lớp này.
+    total_deducted: int = 0
+
+
+class StudentHistoryResponse(BaseModel):
+    class_id: int
+    class_code: str
+    course_name: str
+    student_id: int
+    student_code: str
+    full_name: str
+    summary: StudentHistorySummary
+    items: List[StudentHistoryItem]
 
 
 # =====================================================================
@@ -122,6 +212,7 @@ async def get_teacher_classes(
             func.count(ClassStudent.student_id).label("student_count"),
         )
         .outerjoin(ClassStudent, ClassStudent.class_id == Class.id)
+        .options(selectinload(Class.course))
         .where(Class.teacher_id == current_user.id)
         .group_by(Class.id)
         .order_by(Class.class_code)
@@ -129,8 +220,11 @@ async def get_teacher_classes(
     result = await db.execute(stmt)
     rows = result.all()
 
-    # Lấy tiết dạy hôm nay (nếu có) của các lớp này
-    today = date.today()
+    # Lấy tiết dạy hôm nay (nếu có) của các lớp này.
+    # Một lớp có thể học 2 buổi/ngày (sáng + chiều) nên phải chọn đúng buổi
+    # theo giờ hiện tại, không lấy cứng buổi đầu tiên.
+    today = _today_vn()
+    now_vn = datetime.now(_VN_TZ)
     sched_stmt = (
         select(Schedule)
         .join(Class, Class.id == Schedule.class_id)
@@ -138,10 +232,14 @@ async def get_teacher_classes(
         .order_by(Schedule.start_time)
     )
     sched_rows = (await db.execute(sched_stmt)).scalars().all()
-    today_sched_by_class: Dict[int, Schedule] = {}
+    by_class: Dict[int, List[Schedule]] = {}
     for s in sched_rows:
-        if s.class_id not in today_sched_by_class:
-            today_sched_by_class[s.class_id] = s
+        by_class.setdefault(s.class_id, []).append(s)
+    today_sched_by_class: Dict[int, Schedule] = {
+        class_id: cur
+        for class_id, schedules in by_class.items()
+        if (cur := _current_session(schedules, now_vn)) is not None
+    }
 
     items = []
     for clazz, count in rows:
@@ -184,7 +282,11 @@ async def get_class_live_attendance(
     current_user: User = Depends(require_teacher),
     db: AsyncSession = Depends(get_db),
 ):
-    class_obj = await db.get(Class, class_id)
+    class_obj = (
+        await db.execute(
+            select(Class).options(selectinload(Class.course)).where(Class.id == class_id)
+        )
+    ).scalar_one_or_none()
     if not class_obj:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
@@ -197,30 +299,19 @@ async def get_class_live_attendance(
             detail="Bạn không có quyền quản lý lớp học này",
         )
 
-    # 1. Tìm buổi học hôm nay hoặc buổi học gần nhất
-    today = date.today()
+    # 1. Chỉ mở điểm danh khi có tiết: đúng ngày hôm nay mới có buổi học.
+    # Một lớp có thể học 2 buổi/ngày (sáng + chiều) nên phải chọn đúng buổi
+    # theo giờ hiện tại, không lấy cứng buổi đầu tiên.
+    # Không fallback quá khứ/tương lai — ngoài tiết thì schedule_id=None (kiosk đóng),
+    # GV vẫn xem được danh sách SV và sửa tay.
+    today = _today_vn()
     sched_stmt = (
         select(Schedule)
         .where(Schedule.class_id == class_id, Schedule.study_date == today)
         .order_by(Schedule.start_time)
     )
-    sched = (await db.execute(sched_stmt)).scalars().first()
-
-    if not sched:
-        past_stmt = (
-            select(Schedule)
-            .where(Schedule.class_id == class_id, Schedule.study_date <= today)
-            .order_by(Schedule.study_date.desc(), Schedule.start_time.desc())
-        )
-        sched = (await db.execute(past_stmt)).scalars().first()
-
-    if not sched:
-        fut_stmt = (
-            select(Schedule)
-            .where(Schedule.class_id == class_id)
-            .order_by(Schedule.study_date.asc(), Schedule.start_time.asc())
-        )
-        sched = (await db.execute(fut_stmt)).scalars().first()
+    day_schedules = (await db.execute(sched_stmt)).scalars().all()
+    sched = _current_session(list(day_schedules), datetime.now(_VN_TZ))
 
     # 2. Lấy danh sách sinh viên ghi danh trong lớp
     stmt_students = (
@@ -273,9 +364,12 @@ async def get_class_live_attendance(
                     class_name=class_name,
                     check_in_time=att.check_in_time,
                     check_out_time=att.check_out_time,
+                    check_in_snapshot_url=att.check_in_snapshot_url,
+                    check_out_snapshot_url=att.check_out_snapshot_url,
                     has_uniform=att.has_uniform,
                     status=att.status.value,
                     is_manual_override=att.is_manual_override,
+                    source=_attendance_source(att),
                 )
             )
         else:
@@ -292,6 +386,7 @@ async def get_class_live_attendance(
                     has_uniform=True,
                     status=AttendanceStatus.ABSENT.value,
                     is_manual_override=False,
+                    source="none",
                 )
             )
 
@@ -309,6 +404,153 @@ async def get_class_live_attendance(
         absent_count=absent_count,
         uniform_violation_count=uniform_violation_count,
         students=student_items,
+    )
+
+
+@router.get(
+    "/classes/{class_id}/students/{student_id}/attendance-history",
+    response_model=StudentHistoryResponse,
+    summary="Xem lịch sử điểm danh của 1 sinh viên trong 1 lớp học phần",
+)
+async def get_student_attendance_history(
+    class_id: int,
+    student_id: int,
+    current_user: User = Depends(require_teacher),
+    db: AsyncSession = Depends(get_db),
+):
+    class_obj = (
+        await db.execute(
+            select(Class).options(selectinload(Class.course)).where(Class.id == class_id)
+        )
+    ).scalar_one_or_none()
+    if not class_obj:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Không tìm thấy lớp học phần",
+        )
+    if class_obj.teacher_id != current_user.id:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Bạn không có quyền xem dữ liệu của lớp học này",
+        )
+
+    # Sinh viên phải thuộc lớp học phần.
+    cs_stmt = select(ClassStudent).where(
+        ClassStudent.class_id == class_id,
+        ClassStudent.student_id == student_id,
+    )
+    if not (await db.execute(cs_stmt)).scalar_one_or_none():
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Sinh viên không thuộc lớp học phần này",
+        )
+    student = await db.get(User, student_id)
+
+    # Tất cả buổi học của lớp + điểm danh của SV (LEFT JOIN bằng tay để
+    # buổi chưa điểm danh vẫn hiện dòng "chưa điểm danh").
+    sched_stmt = (
+        select(Schedule)
+        .where(Schedule.class_id == class_id)
+        .order_by(Schedule.study_date.asc(), Schedule.start_time.asc())
+    )
+    schedules = (await db.execute(sched_stmt)).scalars().all()
+    att_stmt = select(Attendance).where(
+        Attendance.student_id == student_id,
+        Attendance.schedule_id.in_([s.id for s in schedules]) if schedules else False,
+    )
+    att_by_sched = (
+        {(a.schedule_id): a for a in (await db.execute(att_stmt)).scalars().all()}
+        if schedules
+        else {}
+    )
+
+    items: List[StudentHistoryItem] = []
+    summary = StudentHistorySummary(total_sessions=len(schedules))
+
+    # Bulk lấy tổng điểm biến động theo từng buổi (1 query thay N+1).
+    # Một buổi có thể có nhiều dòng ledger (NIGHTLY_EVAL + LEAVE_REFUND)
+    # nên cộng gộp theo schedule_id để ra điểm thực trừ/cộng của buổi đó.
+    delta_by_schedule: Dict[int, int] = {}
+    evaluated_schedule_ids: set[int] = set()
+    if schedules:
+        ledger_stmt = select(PointLedger).where(
+            PointLedger.student_id == student_id,
+            PointLedger.schedule_id.in_([s.id for s in schedules]),
+        )
+        for entry in (await db.execute(ledger_stmt)).scalars().all():
+            if entry.schedule_id is None:
+                continue
+            evaluated_schedule_ids.add(entry.schedule_id)
+            delta_by_schedule[entry.schedule_id] = (
+                delta_by_schedule.get(entry.schedule_id, 0) + entry.point_delta
+            )
+
+    for s in schedules:
+        att = att_by_sched.get(s.id)
+        st_str = s.start_time.strftime("%H:%M") if hasattr(s.start_time, "strftime") else str(s.start_time)
+        et_str = s.end_time.strftime("%H:%M") if hasattr(s.end_time, "strftime") else str(s.end_time)
+        point_delta = (
+            delta_by_schedule.get(s.id) if s.id in evaluated_schedule_ids else None
+        )
+        if point_delta is not None and point_delta < 0:
+            summary.total_deducted += abs(point_delta)
+        if att:
+            status_val = att.status.value if isinstance(att.status, AttendanceStatus) else str(att.status)
+            key = status_val.lower()
+            if key == "present":
+                summary.present += 1
+            elif key == "late":
+                summary.late += 1
+            elif key == "half_absent":
+                summary.half_absent += 1
+            elif key == "excused":
+                summary.excused += 1
+            else:
+                summary.absent += 1
+            items.append(
+                StudentHistoryItem(
+                    schedule_id=s.id,
+                    study_date=s.study_date,
+                    start_time=st_str,
+                    end_time=et_str,
+                    session_order=s.session_order,
+                    room_name=s.room_name,
+                    attendance_id=att.id,
+                    check_in_time=att.check_in_time,
+                    check_out_time=att.check_out_time,
+                    check_in_snapshot_url=att.check_in_snapshot_url,
+                    check_out_snapshot_url=att.check_out_snapshot_url,
+                    has_uniform=att.has_uniform,
+                    status=status_val,
+                    is_manual_override=att.is_manual_override,
+                    source=_attendance_source(att),
+                    note=att.note,
+                    point_delta=point_delta,
+                )
+            )
+        else:
+            summary.absent += 1
+            items.append(
+                StudentHistoryItem(
+                    schedule_id=s.id,
+                    study_date=s.study_date,
+                    start_time=st_str,
+                    end_time=et_str,
+                    session_order=s.session_order,
+                    room_name=s.room_name,
+                    point_delta=point_delta,
+                )
+            )
+
+    return StudentHistoryResponse(
+        class_id=class_obj.id,
+        class_code=class_obj.class_code,
+        course_name=class_obj.course_name,
+        student_id=student_id,
+        student_code=student.user_code if student else "",
+        full_name=student.full_name if student else "",
+        summary=summary,
+        items=items,
     )
 
 
@@ -400,7 +642,11 @@ async def get_class_exam_ban_report(
     current_user: User = Depends(require_teacher),
     db: AsyncSession = Depends(get_db),
 ):
-    class_obj = await db.get(Class, class_id)
+    class_obj = (
+        await db.execute(
+            select(Class).options(selectinload(Class.course)).where(Class.id == class_id)
+        )
+    ).scalar_one_or_none()
     if not class_obj:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,

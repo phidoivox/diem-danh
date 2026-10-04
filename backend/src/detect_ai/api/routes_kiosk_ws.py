@@ -15,11 +15,7 @@ mỗi schedule 1 KioskSession.
 
 import asyncio
 import time
-from datetime import datetime
-from zoneinfo import ZoneInfo
-_VN_TZ = ZoneInfo("Asia/Ho_Chi_Minh")
-def _today_vn():
-    return datetime.now(_VN_TZ).date()
+from .deps_kiosk import adaptive_feedback
 
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 from loguru import logger
@@ -89,21 +85,15 @@ async def kiosk_ws(ws: WebSocket):
         await ws.close()
         return
 
+    from fastapi import HTTPException as _HTTPException
+
+    from .deps_kiosk import authorize_kiosk_schedule as _authorize
+
     async with Session() as s:
-        sched = (await s.execute(
-            select(Schedule).options(selectinload(Schedule.clazz).selectinload(Class.course))
-            .where(Schedule.id == schedule_id))).scalar_one_or_none()
-        if not sched:
-            await ws.send_json({"error": "Không tìm thấy buổi học"})
-            await ws.close()
-            return
-        if not sched.clazz or sched.clazz.teacher_id != teacher.id:
-            await ws.send_json({"error": "Bạn không quản lý buổi học này"})
-            await ws.close()
-            return
-        # Chỉ mở điểm danh khi có tiết: đúng ngày học mới cho kiosk chạy.
-        if sched.study_date != _today_vn():
-            await ws.send_json({"error": "Hôm nay lớp không có tiết — điểm danh đang đóng"})
+        try:
+            sched = await _authorize(s, schedule_id, teacher.id)
+        except _HTTPException as e:
+            await ws.send_json({"error": e.detail})
             await ws.close()
             return
         class_id = sched.class_id
@@ -189,13 +179,7 @@ async def kiosk_ws(ws: WebSocket):
                 logger.debug(f"kiosk ws db lỗi: {e}")
                 checked = {"checked_in": [], "checked_out": [], "already_done": []}
             base = int(cfg.kiosk_interval_ms)
-            if infer_ms > 800:
-                nxt, w = base + 250, 416
-            elif infer_ms > 500:
-                nxt, w = base + 100, int(cfg.kiosk_max_width)
-            else:
-                nxt, w = base, int(cfg.kiosk_max_width)
-            nxt = max(120, min(nxt, 600))
+            nxt, w = adaptive_feedback(base, int(cfg.kiosk_max_width), infer_ms)
             try:
                 await ws.send_json({"faces": faces, "checked_in": checked.get("checked_in", []),
                                     "checked_out": checked.get("checked_out", []),
