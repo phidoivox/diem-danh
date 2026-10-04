@@ -6,6 +6,7 @@ from loguru import logger
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from ..core.timeutil import today_vn
 from ..models.academic import ClassStudent, Schedule
 from ..models.attendance_v2 import Attendance, AttendanceStatus
 from ..models.leave_request import LeaveRequest, LeaveStatus
@@ -25,7 +26,7 @@ async def run_nightly_evaluation(
     are evaluated and written to the point ledger. Running multiple times will not duplicate points.
     """
     if target_date is None:
-        target_date = date.today()
+        target_date = today_vn()
 
     logger.info(f"Running nightly evaluation for target_date={target_date}")
 
@@ -38,7 +39,7 @@ async def run_nightly_evaluation(
     point_absence_without_leave = as_int(settings_map, "POINT_ABSENCE_WITHOUT_LEAVE", -5)
     point_uniform_violation = as_int(settings_map, "POINT_UNIFORM_VIOLATION", -2)
     late_tolerance_minutes = as_int(settings_map, "LATE_TOLERANCE_MINUTES", 15)
-    require_checkout = as_bool(settings_map, "REQUIRE_CHECKOUT", True)
+    require_checkout = as_bool(settings_map, "REQUIRE_CHECKOUT", False)
 
     # Bảng quy đổi trạng thái -> điểm (thay if/elif 5 nhánh lặp 2 lần).
     POINT_MAP = {
@@ -118,15 +119,17 @@ async def run_nightly_evaluation(
             )).scalars().all()
         )
 
+        # Bảng điểm build 1 lần/buổi (giữ nguyên nội dung): trong loop chỉ đọc.
+        points = dict(POINT_MAP)
+        points.update({k.value: v for k, v in POINT_MAP.items()})
+        points["UNIFORM_VIOLATION"] = point_uniform_violation
+
         for att in unevaluated_attendances:
             profile = profile_by_student.get(att.student_id)
 
             # Policy thuần quyết định (status, point_delta) — giữ đúng thứ tự
             # approved -> override -> check_in None -> tz-naive late -> checkout.
             # POINT_MAP + bulk-fetch + ledger/max(0,..) giữ nguyên ở dưới.
-            points = dict(POINT_MAP)
-            points.update({k.value: v for k, v in POINT_MAP.items()})
-            points["UNIFORM_VIOLATION"] = point_uniform_violation
             override_status_str = (
                 att.status.value if isinstance(att.status, AttendanceStatus) else str(att.status)
             )

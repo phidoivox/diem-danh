@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import io
 from collections import Counter
-from datetime import date
+from datetime import date, datetime
 from typing import Any, Dict, List, Optional
 from openpyxl import Workbook
 from openpyxl.styles import Alignment, Border, Font, NamedStyle, PatternFill, Side
@@ -12,13 +12,14 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
+from ..core.timeutil import now_vn, today_vn
 from ..models.academic import Class, ClassStudent, Schedule
 from ..models.attendance_v2 import Attendance, AttendanceStatus
 from ..models.user import User
 from .settings_repo import load_exam_ban_thresholds
-
 # Vắng quy đổi: V = N_vắng + 0.5 × N_vắng_nửa_buổi (EXCUSED không tính).
-HALF_ABSENT_WEIGHT = 0.5
+# Hằng số dùng chung từ domain/policies/exam_ban_policy (nguồn duy nhất).
+from ..domain.policies.exam_ban_policy import HALF_ABSENT_WEIGHT  # noqa: E402
 
 EXAM_BAN_HEADERS = [
     "STT",
@@ -128,7 +129,7 @@ async def calculate_class_exam_ban(
     hàng loạt để khỏi truy vấn cấu hình lặp lại cho từng lớp.
     """
     if reference_date is None:
-        reference_date = date.today()
+        reference_date = today_vn()
     if thresholds is None:
         thresholds = await load_exam_ban_thresholds(session)
     warning_percent, ban_percent = thresholds
@@ -136,7 +137,7 @@ async def calculate_class_exam_ban(
     # 1. Fetch class details
     stmt_class = (
         select(Class)
-        .options(selectinload(Class.teacher))
+        .options(selectinload(Class.teacher), selectinload(Class.course))
         .where(Class.id == class_id)
     )
     class_res = await session.execute(stmt_class)
@@ -160,13 +161,22 @@ async def calculate_class_exam_ban(
     )
     students = (await session.execute(stmt_students)).scalars().all()
 
-    # 3. Fetch all schedules up to reference_date (elapsed sessions)
+    # 3. Fetch schedules up to reference_date, rồi CHỈ giữ buổi đã KẾT THÚC.
+    #    Buổi hôm nay chưa tới (hoặc đang học) không được tính: bản ghi điểm danh
+    #    chưa tồn tại nên bước 5 sẽ coi là vắng ⇒ sinh viên bị đẩy tỷ lệ vắng và
+    #    bị gắn "BỊ CẤM THI" oan cho một buổi chưa diễn ra.
     stmt_schedules = (
         select(Schedule)
         .where(Schedule.class_id == class_id, Schedule.study_date <= reference_date)
         .order_by(Schedule.study_date, Schedule.start_time)
     )
-    schedules = (await session.execute(stmt_schedules)).scalars().all()
+    all_schedules = (await session.execute(stmt_schedules)).scalars().all()
+    # study_date/end_time lưu giờ tường địa phương (naive) nên so với giờ VN naive.
+    now_local = now_vn().replace(tzinfo=None)
+    schedules = [
+        s for s in all_schedules
+        if datetime.combine(s.study_date, s.end_time) <= now_local
+    ]
     elapsed_sessions = len(schedules)
 
     # 4. Fetch attendances for elapsed schedules
@@ -184,7 +194,7 @@ async def calculate_class_exam_ban(
         counts: Counter = Counter()
         for sched in schedules:
             att = att_map.get((sched.id, st.id))
-            # Buổi quá khứ chưa có bản ghi = vắng không phép.
+            # Buổi đã kết thúc mà chưa có bản ghi = vắng không phép.
             counts[att.status if att else AttendanceStatus.ABSENT] += 1
 
         n_absent = counts[AttendanceStatus.ABSENT]
@@ -250,7 +260,7 @@ async def calculate_all_classes_exam_ban(
     reference_date: Optional[date] = None,
 ) -> List[Dict[str, Any]]:
     """Calculate exam-ban data across all classes in the school for admin report."""
-    stmt = select(Class).order_by(Class.class_code)
+    stmt = select(Class).options(selectinload(Class.course)).order_by(Class.class_code)
     classes = (await session.execute(stmt)).scalars().all()
 
     # Đọc cấu hình 1 lần cho cả trường thay vì mỗi lớp 1 lần
@@ -276,7 +286,7 @@ def _write_title_block(ws: Worksheet, title: str, subtitle: str) -> None:
 
     ws.merge_cells("A2:I2")
     subtitle_cell = ws["A2"]
-    subtitle_cell.value = subtitle or f"Ngày xuất báo cáo: {date.today().strftime('%d/%m/%Y')}"
+    subtitle_cell.value = subtitle or f"Ngày xuất báo cáo: {today_vn().strftime('%d/%m/%Y')}"
     subtitle_cell.style = "exam_subtitle"
     ws.row_dimensions[2].height = 20
     ws.row_dimensions[3].height = 10  # dòng phân cách
