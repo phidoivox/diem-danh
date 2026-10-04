@@ -1,5 +1,6 @@
 import io
 from datetime import date, datetime, time, timedelta, timezone
+from zoneinfo import ZoneInfo
 import openpyxl
 import pytest
 import pytest_asyncio
@@ -14,6 +15,7 @@ from detect_ai.main import app
 from detect_ai.models.academic import Class, ClassStudent, Schedule
 from detect_ai.models.attendance_v2 import Attendance, AttendanceStatus
 from detect_ai.models.user import Role, StudentProfile, TeacherProfile, User
+from detect_ai.services import report_service
 
 
 @pytest_asyncio.fixture
@@ -181,13 +183,15 @@ async def seeded_data(test_session_maker):
             end_time=time(11, 30),
             session_order=3,
         )
-        # Today's schedule for live attendance
+        # Today's schedule for live attendance (kết thúc 23:30 để test
+        # chạy được mọi giờ trong ngày; logic khung giờ do test_current_session
+        # và test_kiosk_window bao phủ với giờ cố định)
         sched_today = Schedule(
             class_id=class1.id,
             room_name="A101",
             study_date=today,
             start_time=time(13, 0),
-            end_time=time(16, 30),
+            end_time=time(23, 30),
             session_order=4,
         )
 
@@ -480,10 +484,18 @@ async def test_teacher_manual_override(test_session_maker, seeded_data, auth_tok
 
 
 @pytest.mark.asyncio
-async def test_exam_ban_calculation(test_session_maker, seeded_data, auth_tokens):
+async def test_exam_ban_calculation(test_session_maker, seeded_data, auth_tokens, monkeypatch):
     async def override_get_db():
         async with test_session_maker() as session:
             yield session
+
+    # Báo cáo chỉ tính buổi đã KẾT THÚC (giờ VN). Cố định "bây giờ" = 23:30 hôm nay để
+    # buổi 13:00-16:30 hôm nay chắc chắn đã kết thúc ⇒ test không phụ thuộc giờ chạy.
+    monkeypatch.setattr(
+        report_service,
+        "now_vn",
+        lambda: datetime.combine(date.today(), time(23, 30), tzinfo=ZoneInfo("Asia/Ho_Chi_Minh")),
+    )
 
     app.dependency_overrides[get_db] = override_get_db
     class1_id = seeded_data["class1"].id
@@ -502,6 +514,9 @@ async def test_exam_ban_calculation(test_session_maker, seeded_data, auth_tokens
         assert report["class_code"] == "CS101"
         assert report["course_name"] == "Lập trình Python"
         assert report["total_sessions"] == 15
+        # Ngưỡng backend trả kèm để frontend hiển thị khớp (mặc định 15/20)
+        assert report["warning_percent"] == 15
+        assert report["ban_percent"] == 20
 
         students = {s["student_code"]: s for s in report["students"]}
 
@@ -637,3 +652,96 @@ async def test_admin_export_exam_ban_all_excel(test_session_maker, seeded_data, 
         assert res_student.status_code == 403
 
     app.dependency_overrides.clear()
+
+
+@pytest.mark.asyncio
+async def test_admin_get_class_exam_ban_report(test_session_maker, seeded_data, auth_tokens):
+    async def override_get_db():
+        async with test_session_maker() as session:
+            yield session
+
+    app.dependency_overrides[get_db] = override_get_db
+
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as ac:
+        class1_id = seeded_data["class1"].id
+
+        # 1. Admin can view class report
+        res = await ac.get(
+            f"/api/v1/admin/reports/classes/{class1_id}/exam-ban-report",
+            headers={"Authorization": f"Bearer {auth_tokens['admin']}"},
+        )
+        assert res.status_code == 200
+        data = res.json()
+        assert data["class_id"] == class1_id
+        assert len(data["students"]) == 3
+
+        # 2. Admin can export class excel
+        res_excel = await ac.get(
+            f"/api/v1/admin/reports/classes/{class1_id}/export-exam-ban-excel",
+            headers={"Authorization": f"Bearer {auth_tokens['admin']}"},
+        )
+        assert res_excel.status_code == 200
+        assert "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" in res_excel.headers["Content-Type"]
+
+        # 3. Teacher gets 403 on admin report
+        res_t = await ac.get(
+            f"/api/v1/admin/reports/classes/{class1_id}/exam-ban-report",
+            headers={"Authorization": f"Bearer {auth_tokens['teacher1']}"},
+        )
+        assert res_t.status_code == 403
+
+        # 4. Student gets 403 on admin report
+        res_s = await ac.get(
+            f"/api/v1/admin/reports/classes/{class1_id}/exam-ban-report",
+            headers={"Authorization": f"Bearer {auth_tokens['student1']}"},
+        )
+        assert res_s.status_code == 403
+
+    app.dependency_overrides.clear()
+
+
+@pytest.mark.asyncio
+async def test_teacher_student_attendance_history(test_session_maker, seeded_data, auth_tokens):
+    """GV xem lịch sử điểm danh của 1 SV trong 1 môn: đủ 4 buổi + summary."""
+    async def override_get_db():
+        async with test_session_maker() as session:
+            yield session
+
+    app.dependency_overrides[get_db] = override_get_db
+    class1_id = seeded_data["class1"].id
+    student1_id = seeded_data["student1"].id
+
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as ac:
+        # 1. Teacher 1 xem lịch sử student1 ở class1: 3 quá khứ ABSENT + hôm nay PRESENT
+        res = await ac.get(
+            f"/api/v1/teacher/classes/{class1_id}/students/{student1_id}/attendance-history",
+            headers={"Authorization": f"Bearer {auth_tokens['teacher1']}"},
+        )
+        assert res.status_code == 200, res.text
+        data = res.json()
+        assert data["class_code"] == "CS101"
+        assert data["student_code"] == "SV001"
+        assert len(data["items"]) == 4
+        assert [i["session_order"] for i in data["items"]] == [1, 2, 3, 4]
+        assert data["summary"]["total_sessions"] == 4
+        assert data["summary"]["absent"] == 3
+        assert data["summary"]["present"] == 1
+
+        # 2. Teacher 2 (không dạy lớp này) -> 403
+        res2 = await ac.get(
+            f"/api/v1/teacher/classes/{class1_id}/students/{student1_id}/attendance-history",
+            headers={"Authorization": f"Bearer {auth_tokens['teacher2']}"},
+        )
+        assert res2.status_code == 403
+
+        # 3. SV không thuộc lớp -> 404
+        res3 = await ac.get(
+            f"/api/v1/teacher/classes/{class1_id}/students/999999/attendance-history",
+            headers={"Authorization": f"Bearer {auth_tokens['teacher1']}"},
+        )
+        assert res3.status_code == 404
+
+    app.dependency_overrides.clear()
+

@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import date, datetime
+from datetime import date, datetime, time
 from typing import Any, Dict, List, Optional
 from fastapi import APIRouter, Depends, HTTPException, Response, status
 from pydantic import BaseModel, ConfigDict, Field
@@ -34,28 +34,42 @@ router = APIRouter(
 # =====================================================================
 
 
+from .deps_kiosk import KIOSK_GRACE_MINUTES
+
+
+def _in_window(s: Schedule, current: time) -> bool:
+    """Đang trong giờ học (start <= now < end), trừ hao grace sau tan học.
+
+    Grace 90' sau end_time để GV chốt sĩ số/sửa tay ngay sau tiết mà không
+    phải chờ cron. Hết grace -> None (kiosk đóng, "Hôm nay không có tiết").
+    Dùng chung KIOSK_GRACE_MINUTES với deps_kiosk (kiosk/WS khóa cùng mốc).
+    """
+    if not s.start_time or not s.end_time:
+        return False
+    start = s.start_time.replace(tzinfo=None)
+    end = s.end_time.replace(tzinfo=None)
+    if start <= current < end:
+        return True
+    end_min = end.hour * 60 + end.minute
+    cur_min = current.hour * 60 + current.minute
+    return 0 <= cur_min - end_min <= KIOSK_GRACE_MINUTES
+
+
 def _current_session(
     schedules: List[Schedule], now: Optional[datetime] = None
 ) -> Optional[Schedule]:
-    """Chọn buổi đang diễn ra (start <= now < end).
+    """Buổi đang diễn ra (hoặc trong grace 90' sau tan học).
 
-    Hết giờ mà vẫn còn tiết hôm nay (VD tiết 13-17h, lúc 18h): rớt vào
-    buổi KẾT THÚC GẦN NHẤT để GV vẫn xem/sửa sĩ số buổi đó ("còn tiết").
-    Chưa tới giờ buổi nào: None (kiosk đóng, chưa có gì để xem).
-    Không buổi nào: None.
+    Ẩn hẳn khi: chưa tới giờ buổi nào, hoặc đã qua grace buổi cuối
+    (VD tiết 13-17h, sau 18:30 -> None + kiosk đóng).
     """
     if not schedules:
         return None
     ordered = sorted(schedules, key=lambda s: (s.start_time, s.end_time, s.id))
     current = (now or datetime.now(_VN_TZ)).time().replace(tzinfo=None)
     for s in ordered:
-        start = s.start_time.replace(tzinfo=None) if s.start_time else None
-        end = s.end_time.replace(tzinfo=None) if s.end_time else None
-        if start is not None and end is not None and start <= current < end:
+        if _in_window(s, current):
             return s
-    past = [s for s in ordered if s.end_time and s.end_time.replace(tzinfo=None) <= current]
-    if past:
-        return past[-1]
     return None
 
 
