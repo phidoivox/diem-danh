@@ -47,9 +47,23 @@ def _providers(explicit: str = "auto") -> list[str]:
 
 
 def _nms(boxes: np.ndarray, scores: np.ndarray, iou_thr: float = 0.5) -> list[int]:
-    """NMS numpy đơn giản. boxes (N,4) xyxy, scores (N,)."""
+    """NMS ưu tiên cv2.dnn.NMSBoxes, fallback numpy khi thiếu cv2."""
     if len(boxes) == 0:
         return []
+    try:
+        import cv2
+
+        # cv2.dnn.NMSBoxes nhận [x, y, w, h], không phải xyxy; threshold 0.0
+        # để không lọc theo điểm (caller đã lọc conf) — chỉ khử overlap.
+        xywh = boxes.copy()
+        xywh[:, 2] -= xywh[:, 0]
+        xywh[:, 3] -= xywh[:, 1]
+        idx = cv2.dnn.NMSBoxes(xywh.tolist(), scores.tolist(), 0.0, float(iou_thr))
+        if len(idx) == 0:
+            return []
+        return [int(i[0] if isinstance(i, (list, tuple, np.ndarray)) else i) for i in idx]
+    except Exception:
+        pass
     x1, y1, x2, y2 = boxes[:, 0], boxes[:, 1], boxes[:, 2], boxes[:, 3]
     areas = np.maximum(0, x2 - x1) * np.maximum(0, y2 - y1)
     order = np.argsort(-scores)
