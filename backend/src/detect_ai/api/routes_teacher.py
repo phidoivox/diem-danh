@@ -34,11 +34,7 @@ router = APIRouter(
 # =====================================================================
 
 
-def _in_window(s: Schedule, current: time) -> bool:
-    """Đang trong giờ học (start <= now < end). Ngoài giờ -> ẩn."""
-    if not s.start_time or not s.end_time:
-        return False
-    return s.start_time.replace(tzinfo=None) <= current < s.end_time.replace(tzinfo=None)
+from .deps_kiosk import in_window
 
 
 def _current_session(
@@ -50,7 +46,7 @@ def _current_session(
     ordered = sorted(schedules, key=lambda s: (s.start_time, s.end_time, s.id))
     current = (now or datetime.now(_VN_TZ)).time().replace(tzinfo=None)
     for s in ordered:
-        if _in_window(s, current):
+        if in_window(s.start_time, s.end_time, current):
             return s
     return None
 

@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from datetime import datetime, time
+
 from fastapi import HTTPException, status
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -9,14 +11,17 @@ from ..core.timeutil import now_vn, today_vn
 from ..models.academic import Class, Schedule
 
 
-def in_session_window(sched: Schedule, now=None) -> bool:
-    """Buổi còn mở điểm danh: đúng ngày và đang trong giờ học."""
-    from datetime import datetime
-
-    if not sched.start_time or not sched.end_time:
+def in_window(start: time | None, end: time | None, current: time) -> bool:
+    """Đang trong giờ học (start <= now < end). Dùng chung hiển thị + kiosk."""
+    if not start or not end:
         return False
+    return start.replace(tzinfo=None) <= current < end.replace(tzinfo=None)
+
+
+def in_session_window(sched: Schedule, now: datetime | None = None) -> bool:
+    """Buổi còn mở điểm danh: đúng ngày và đang trong giờ học."""
     current = (now or now_vn()).time().replace(tzinfo=None)
-    return sched.start_time.replace(tzinfo=None) <= current < sched.end_time.replace(tzinfo=None)
+    return in_window(sched.start_time, sched.end_time, current)
 
 
 async def authorize_kiosk_schedule(db: AsyncSession, schedule_id: int, teacher_id: int) -> Schedule:
