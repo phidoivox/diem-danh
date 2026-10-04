@@ -246,9 +246,12 @@ def match(emb: np.ndarray, gallery: Gallery, threshold: float = 0.45,
     top1, sid1 = float(scores[0]), int(owners[0])
     if len(scores) > 1:
         top2, sid2 = float(scores[1]), int(owners[1])
-        # Nếu top2 cùng SV với top1 -> tìm runner khác SV để tính margin thật
-        if sid2 == sid1 and len(scores) == 2 and gallery.proto_count > 2:
-            scores2, owners2 = match_topk(emb, gallery, topk=min(5, gallery.proto_count))
+        # Nếu top2 cùng SV với top1 -> tìm runner khác SV để tính margin thật.
+        # Quét TOÀN gallery (không cap topk): 1 SV tối đa 5 proto nên runner có
+        # thể ở hạng 6+, cap 5 cũ cho margin 0 -> unsure oan. Gallery lớp học
+        # (~200 proto) argpartition full rẻ (~µs), không cần tiết kiệm ở đây.
+        if sid2 == sid1 and gallery.proto_count > 2:
+            scores2, owners2 = match_topk(emb, gallery, topk=gallery.proto_count)
             top2, sid2 = top1, sid1
             for s, o in zip(scores2[1:], owners2[1:]):
                 if int(o) != sid1:

@@ -291,8 +291,8 @@ def test_orm_v2_columns_mapped():
     from detect_ai.models.face import FaceEmbedding, FaceEvent
     assert "uniform_status" in Attendance.__table__.columns
     assert "uniform_score" in Attendance.__table__.columns
-    assert "model_version" in FaceEmbedding.__table__.columns
-    assert "det_score" in FaceEmbedding.__table__.columns
+    assert "embedding" in FaceEmbedding.__table__.columns
+    assert "quality" in FaceEmbedding.__table__.columns
     assert "margin" in FaceEvent.__table__.columns
     assert "backend" in FaceEvent.__table__.columns
 
@@ -406,3 +406,20 @@ async def test_checkout_updates_uniform_on_violation(session_maker_fixture, v2_s
             Attendance.schedule_id == sched, Attendance.student_id == sid,
         ))).scalar_one()
         assert att.has_uniform is False
+
+def test_match_same_student_top2_finds_other_runner():
+    # 1 SV có 5 proto gần nhau (tối đa enroll.MAX_ACTIVE_PER_USER): top-5 toàn
+    # cùng SV, runner (SV khác) ở hạng 6. Cap topk=5 cũ bỏ lỡ -> margin 0 -> unsure oan.
+    v = _vec(7)
+    protos = [v]
+    for i in range(4):
+        noise = np.random.default_rng(100 + i).standard_normal(512).astype(np.float32)
+        p = v + 0.01 * noise
+        protos.append(p / float(np.linalg.norm(p)))
+    v_far = _vec(99)
+    entries = [ProtoEntry(1, "SV001", "An", protos), ProtoEntry(2, "SV002", "Binh", [v_far])]
+    mat = np.stack(protos + [v_far])
+    gal = Gallery(10, 0, entries, mat, np.asarray([1] * 5 + [2]), 0.0)
+    m = match(v, gal)
+    assert m.decision == "accept" and m.student_id == 1
+    assert m.runner_up == 2
