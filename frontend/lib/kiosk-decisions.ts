@@ -86,12 +86,7 @@ export function boxLabel(b: {
   user_code?: string | null;
 }): string {
   const dec = b.decision || "UNKNOWN";
-  const name =
-    (b as { fullName?: string | null }).fullName ||
-    b.full_name ||
-    (b as { userCode?: string | null }).userCode ||
-    b.user_code ||
-    "";
+  const name = b.fullName || b.full_name || b.userCode || b.user_code || "";
   switch (dec) {
     case "CHECKED_IN":
       return `✓ ${name}`;

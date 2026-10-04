@@ -564,7 +564,7 @@ export interface KioskCheckinResponse {
 
 export function kioskWsUrl(scheduleId: number): string {
   const token = getToken() || "";
-  const base = API.replace(/^http/, "ws");
+  const base = API.replace(/^http:/, "ws:").replace(/^https:/, "wss:");
   return `${base}/api/v1/kiosk/ws?schedule_id=${scheduleId}&token=${encodeURIComponent(token)}`;
 }
 export function kioskWsProtocols(): string[] {
