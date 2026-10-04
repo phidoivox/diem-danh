@@ -16,6 +16,8 @@ import threading
 import numpy as np
 from loguru import logger
 
+from .geometry import iou as _iou
+
 DEFAULT_NAMES = ["person", "valid_shirt", "invalid_shirt"]
 
 
@@ -166,16 +168,6 @@ class UniformEngine:
         keep = _nms(boxes, best_conf.astype(np.float32))
         return UniformDetections(boxes[keep], best_conf[keep].astype(np.float32),
                                  best_cls[keep].astype(np.int64), self.names)
-
-
-def _iou(a: np.ndarray, b: np.ndarray) -> float:
-    x1, y1 = max(a[0], b[0]), max(a[1], b[1])
-    x2, y2 = min(a[2], b[2]), min(a[3], b[3])
-    inter = max(0.0, x2 - x1) * max(0.0, y2 - y1)
-    aa = max(0.0, a[2] - a[0]) * max(0.0, a[3] - a[1])
-    bb = max(0.0, b[2] - b[0]) * max(0.0, b[3] - b[1])
-    union = aa + bb - inter
-    return float(inter / union) if union > 0 else 0.0
 
 
 def uniform_for_face(face_bbox: np.ndarray, det: UniformDetections,
