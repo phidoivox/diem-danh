@@ -37,12 +37,12 @@ router = APIRouter(
 def _current_session(
     schedules: List[Schedule], now: Optional[datetime] = None
 ) -> Optional[Schedule]:
-    """Chọn buổi đang diễn ra (start <= now < end), nếu chưa tới giờ thì
-    lấy buổi sắp tới gần nhất, ngược lại lấy buổi cuối cùng trong ngày.
+    """Chọn buổi đang diễn ra (start <= now < end).
 
-    Trước đây chỗ này luôn lấy buổi đầu tiên (`.first()` sau `ORDER BY
-    start_time`), nên lớp học cả sáng + chiều thì buổi chiều vẫn dính
-    điểm danh/attendance của buổi sáng.
+    Hết giờ mà vẫn còn tiết hôm nay (VD tiết 13-17h, lúc 18h): rớt vào
+    buổi KẾT THÚC GẦN NHẤT để GV vẫn xem/sửa sĩ số buổi đó ("còn tiết").
+    Chưa tới giờ buổi nào: None (kiosk đóng, chưa có gì để xem).
+    Không buổi nào: None.
     """
     if not schedules:
         return None
@@ -53,10 +53,10 @@ def _current_session(
         end = s.end_time.replace(tzinfo=None) if s.end_time else None
         if start is not None and end is not None and start <= current < end:
             return s
-    upcoming = [s for s in ordered if s.start_time and s.start_time.replace(tzinfo=None) > current]
-    if upcoming:
-        return upcoming[0]
-    return ordered[-1]
+    past = [s for s in ordered if s.end_time and s.end_time.replace(tzinfo=None) <= current]
+    if past:
+        return past[-1]
+    return None
 
 
 class ScheduleBrief(BaseModel):
