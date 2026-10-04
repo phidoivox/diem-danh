@@ -34,35 +34,17 @@ router = APIRouter(
 # =====================================================================
 
 
-from .deps_kiosk import KIOSK_GRACE_MINUTES
-
-
 def _in_window(s: Schedule, current: time) -> bool:
-    """Đang trong giờ học (start <= now < end), trừ hao grace sau tan học.
-
-    Grace 90' sau end_time để GV chốt sĩ số/sửa tay ngay sau tiết mà không
-    phải chờ cron. Hết grace -> None (kiosk đóng, "Hôm nay không có tiết").
-    Dùng chung KIOSK_GRACE_MINUTES với deps_kiosk (kiosk/WS khóa cùng mốc).
-    """
+    """Đang trong giờ học (start <= now < end). Ngoài giờ -> ẩn."""
     if not s.start_time or not s.end_time:
         return False
-    start = s.start_time.replace(tzinfo=None)
-    end = s.end_time.replace(tzinfo=None)
-    if start <= current < end:
-        return True
-    end_min = end.hour * 60 + end.minute
-    cur_min = current.hour * 60 + current.minute
-    return 0 <= cur_min - end_min <= KIOSK_GRACE_MINUTES
+    return s.start_time.replace(tzinfo=None) <= current < s.end_time.replace(tzinfo=None)
 
 
 def _current_session(
     schedules: List[Schedule], now: Optional[datetime] = None
 ) -> Optional[Schedule]:
-    """Buổi đang diễn ra (hoặc trong grace 90' sau tan học).
-
-    Ẩn hẳn khi: chưa tới giờ buổi nào, hoặc đã qua grace buổi cuối
-    (VD tiết 13-17h, sau 18:30 -> None + kiosk đóng).
-    """
+    """Buổi đang diễn ra (start <= now < end). Ngoài giờ -> None."""
     if not schedules:
         return None
     ordered = sorted(schedules, key=lambda s: (s.start_time, s.end_time, s.id))
