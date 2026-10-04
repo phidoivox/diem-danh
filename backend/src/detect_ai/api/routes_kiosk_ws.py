@@ -19,12 +19,9 @@ from .deps_kiosk import adaptive_feedback
 
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 from loguru import logger
-from sqlalchemy import select
-from sqlalchemy.orm import selectinload
 
 from ..core.database import Session
 from ..core.security import decode_access_token
-from ..models.academic import Class, Schedule
 from ..models.user import User
 from ..recognition import gallery as gal_mod
 from ..recognition import pipeline as pipe_mod

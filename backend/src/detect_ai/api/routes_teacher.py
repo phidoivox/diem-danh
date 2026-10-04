@@ -10,7 +10,6 @@ from sqlalchemy.orm import selectinload
 
 from ..core.deps import get_db
 from ..core.timeutil import VN_TZ as _VN_TZ
-from ..core.timeutil import now_vn as _now_vn
 from ..core.timeutil import today_vn as _today_vn
 from ..models.academic import Class, ClassStudent, Schedule
 from ..models.attendance_v2 import Attendance, AttendanceStatus
