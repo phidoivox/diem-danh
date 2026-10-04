@@ -12,32 +12,18 @@ try:
     # pwdlib là thư viện kế thừa passlib (đã ngừng bảo trì, vỡ trên Python 3.13
     # với bcrypt>=4.1). Dùng backend bcrypt/bcrypt_sha256 hiện đại.
     from pwdlib import PasswordHash
+    from pwdlib.hashers.bcrypt import BcryptHasher
 
-    _password_hash = PasswordHash.recommended()
+    _password_hash = PasswordHash((BcryptHasher(),))
 except Exception:  # pragma: no cover - fallback khi chưa cài pwdlib
     _password_hash = None
 
-try:
-    from passlib.context import CryptContext
-
-    _legacy_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
-except Exception:  # pragma: no cover
-    _legacy_context = None
-
 
 def verify_password(plain_password: str, hashed_password: str) -> bool:
-    """Verify a plain password against a stored hash.
-
-    Ưu tiên pwdlib; fallback passlib để vẫn đọc được hash cũ đã lưu trong DB.
-    """
+    """Verify a plain password against a stored hash (pwdlib bcrypt duy nhất)."""
     if _password_hash is not None:
         try:
             return _password_hash.verify(plain_password, hashed_password)
-        except Exception:
-            pass
-    if _legacy_context is not None:
-        try:
-            return _legacy_context.verify(plain_password, hashed_password)
         except Exception:
             return False
     return False
@@ -47,8 +33,6 @@ def get_password_hash(password: str) -> str:
     """Generate hash for a plain password (luôn dùng pwdlib khi có)."""
     if _password_hash is not None:
         return _password_hash.hash(password)
-    if _legacy_context is not None:
-        return _legacy_context.hash(password)
     raise RuntimeError("Không có backend băm mật khẩu (cài pwdlib)")
 
 
