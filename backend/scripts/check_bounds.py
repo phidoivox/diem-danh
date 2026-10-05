@@ -12,7 +12,11 @@ FORBIDDEN = {
     "application": ("sqlalchemy", "fastapi", "cv2", "onnxruntime"),
 }
 # ponytail: strangler debt — refactor off direct sqlalchemy at Task 9
-TEMP_ALLOW = {"leave/application/review.py", "evaluation/application/nightly.py"}
+TEMP_ALLOW = {
+    "leave/application/review.py",
+    "evaluation/application/nightly.py",
+    "reporting/application/build.py",
+}
 CROSS_FROM_RE = re.compile(r"from\s+detect_ai\.modules\.([a-z_]+)\.([a-z_]+)")
 CROSS_IMPORT_RE = re.compile(r"import\s+detect_ai\.modules\.([a-z_]+)\.([a-z_]+)")
 CROSS_FROM_MOD_RE = re.compile(r"from\s+detect_ai\.modules\.([a-z_]+)\s+import\s+([^\n#]+)")

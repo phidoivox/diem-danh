@@ -9,13 +9,13 @@ from prometheus_fastapi_instrumentator import Instrumentator
 from sqlalchemy.exc import IntegrityError
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from .modules.academic.presentation.routes import router as admin_academic
-from .api.routes_admin_reports import router as admin_reports
+from .modules.reporting.presentation.routes import router as admin_reports
 from .api.routes_admin_settings import router as admin_settings
 from .modules.evaluation.presentation.routes import router as admin_evaluation
 from .api.routes_kiosk import router as kiosk
 from .api.routes_kiosk_ws import router as kiosk_ws
 from .modules.leave.presentation.routes import router as leave_requests
-from .api.routes_student_portal import router as student_portal
+from .modules.reporting.presentation.portal_routes import router as student_portal
 from .api.routes_teacher import router as teacher
 from .modules.identity.presentation.admin_routes import router as admin_users
 from .modules.identity.presentation.routes import router as auth
