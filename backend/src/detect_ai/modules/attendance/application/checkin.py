@@ -2,9 +2,7 @@ from __future__ import annotations
 
 from typing import Any, Iterable
 
-# Debt note (Ruling T7-4): recognition.service imports stay OLD path verbatim.
-# Will be rewired to modules.recognition.public in Task 8.
-from detect_ai.recognition import service as svc
+from detect_ai.modules.recognition.public import commit_decisions
 from detect_ai.services.settings_repo import load_min_checkout_gap
 
 
@@ -24,7 +22,7 @@ async def record_checkin(
     if min_gap_minutes is None:
         min_gap_minutes = await load_min_checkout_gap(session)
 
-    return await svc.commit_decisions(
+    return await commit_decisions(
         session,
         schedule_id=schedule_id,
         teacher_id=teacher_id,

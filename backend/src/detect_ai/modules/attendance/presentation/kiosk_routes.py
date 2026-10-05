@@ -25,14 +25,8 @@ from sqlalchemy.orm import selectinload
 from detect_ai.shared.kernel.deps import get_db
 from detect_ai.core.supabase import STORAGE_DIR, SupabaseStorageHelper
 from detect_ai.models.academic import Class, ClassStudent, Schedule
-from detect_ai.models.face import FaceEmbedding
 from detect_ai.models.user import User
-from detect_ai.recognition import gallery as gal_mod
-from detect_ai.recognition import pipeline as pipe_mod
-from detect_ai.recognition import service as svc
-from detect_ai.recognition.config import get_config
-from detect_ai.recognition.image import ImageDecodeError, decode_frame, decode_strict
-from detect_ai.services import face_service
+from detect_ai.modules.recognition import public
 from detect_ai.services.settings_repo import load_min_checkout_gap
 from detect_ai.api.deps_auth import require_admin, require_teacher
 from detect_ai.api.deps_kiosk import adaptive_feedback, authorize_kiosk_schedule
@@ -92,21 +86,21 @@ async def kiosk_checkin(
     current_user: User = Depends(require_teacher),
     db: AsyncSession = Depends(get_db),
 ):
-    cfg = get_config()
+    cfg = public.get_config()
     sched = await _get_schedule_for_teacher(db, schedule_id, current_user.id)
     content = await frame.read()
     if not content or len(content) > 5_000_000:
         raise HTTPException(422, "Frame ảnh rỗng hoặc quá lớn (>5MB)")
     try:
-        img = decode_frame(content, max_width=int(cfg.kiosk_max_width))
-    except ImageDecodeError as e:
+        img = public.decode_frame(content, max_width=int(cfg.kiosk_max_width))
+    except public.ImageDecodeError as e:
         raise HTTPException(422, str(e))
 
-    gallery = await gal_mod.load_gallery(db, sched.class_id, ttl_s=cfg.gallery_cache_ttl_s)
+    gallery = await public.load_gallery(db, sched.class_id, ttl_s=cfg.gallery_cache_ttl_s)
     if len(gallery) == 0:
         return CheckinResponse(schedule_id=schedule_id, gallery_size=0)
 
-    sess = pipe_mod.get_session(schedule_id, cfg)
+    sess = public.get_session(schedule_id, cfg)
     lock = _lock_for(schedule_id)
     # Single-flight cùng ca: frame tới khi đang infer thì bỏ (client gửi tấm mới).
     if lock.locked():
@@ -119,7 +113,7 @@ async def kiosk_checkin(
 
         _t0 = _t.perf_counter()
         decisions = await asyncio.to_thread(
-            sess.process, img, gallery, None, None, svc.uniform_hook_factory())
+            sess.process, img, gallery, None, None, public.uniform_hook_factory())
         infer_ms = (_t.perf_counter() - _t0) * 1000.0
 
     by_id = {e.student_id: e for e in gallery.entries}
@@ -130,7 +124,7 @@ async def kiosk_checkin(
             user_code=by_id.get(d.student_id).user_code if d.student_id in by_id else None,
             full_name=by_id.get(d.student_id).full_name if d.student_id in by_id else None,
             score=round(d.score, 3), liveness=round(d.liveness, 3),
-            decision=svc.to_legacy(d.decision),
+            decision=public.to_legacy(d.decision),
         )
         for d in decisions
     ]
@@ -164,18 +158,18 @@ async def gallery_status(
     if not clazz or clazz.teacher_id != current_user.id:
         raise HTTPException(status.HTTP_403_FORBIDDEN, "Bạn không quản lý lớp này")
     stmt = (
-        select(User, func.count(FaceEmbedding.id))
+        select(User, func.count(public.FaceEmbedding.id))
         .join(ClassStudent, ClassStudent.student_id == User.id)
-        .outerjoin(FaceEmbedding,
-                   (FaceEmbedding.user_id == User.id) & (FaceEmbedding.is_active == True))  # noqa: E712
+        .outerjoin(public.FaceEmbedding,
+                   (public.FaceEmbedding.user_id == User.id) & (public.FaceEmbedding.is_active == True))  # noqa: E712
         .where(ClassStudent.class_id == class_id,
                User.is_active == True, User.deleted_at.is_(None))  # noqa: E712
         .group_by(User.id)
         .order_by(User.user_code)
     )
     rows = (await db.execute(stmt)).all()
-    cfg = get_config()
-    gallery = await gal_mod.load_gallery(db, class_id, ttl_s=cfg.gallery_cache_ttl_s)
+    cfg = public.get_config()
+    gallery = await public.load_gallery(db, class_id, ttl_s=cfg.gallery_cache_ttl_s)
     items = [{"student_id": u.id, "user_code": u.user_code, "full_name": u.full_name,
               "embeddings": int(c), "enrolled": int(c) > 0} for u, c in rows]
     return {"class_id": class_id, "total": len(items),
@@ -199,12 +193,12 @@ async def enroll_face(
     if not content:
         raise HTTPException(422, "File ảnh rỗng")
     try:
-        img = decode_strict(content)
-    except ImageDecodeError as e:
+        img = public.decode_strict(content)
+    except public.ImageDecodeError as e:
         raise HTTPException(422, str(e))
     try:
-        row = await face_service.enroll_image(db, user_id, img, source="kiosk")
-    except face_service.EnrollError as e:
+        row = await public.enroll_image(db, user_id, img, source="kiosk")
+    except public.EnrollError as e:
         raise HTTPException(422, str(e))
     return {"ok": True, "user_id": user_id, "embedding_id": row.id,
             "quality": round(row.quality, 3)}
@@ -236,7 +230,7 @@ async def backfill_class(
     avatar_dir = Path(STORAGE_DIR) / SupabaseStorageHelper.BUCKET_AVATARS
     ok, skipped, failed = 0, 0, []
     for u in students:
-        if await face_service.active_count(db, u.id) > 0:
+        if await public.active_count(db, u.id) > 0:
             skipped += 1
             continue
         img_bytes = None
@@ -256,14 +250,14 @@ async def backfill_class(
             failed.append({"user_code": u.user_code, "reason": "chưa có avatar"})
             continue
         try:
-            img = decode_strict(img_bytes)
-            await face_service.enroll_image(db, u.id, img, source="avatar")
+            img = public.decode_strict(img_bytes)
+            await public.enroll_image(db, u.id, img, source="avatar")
             ok += 1
-        except face_service.EnrollError as e:
+        except public.EnrollError as e:
             failed.append({"user_code": u.user_code, "reason": str(e)})
         except Exception as e:  # noqa: BLE001
             failed.append({"user_code": u.user_code, "reason": f"lỗi: {e}"})
-    gal_mod.bump_version(class_id)
+    public.bump_version(class_id)
     return {"class_id": class_id, "enrolled": ok, "already": skipped, "failed": failed}
 
 
@@ -274,5 +268,5 @@ async def reset_session(
     db: AsyncSession = Depends(get_db),
 ):
     await _get_schedule_for_teacher(db, schedule_id, current_user.id)
-    pipe_mod.reset_session(schedule_id)
+    public.reset_session(schedule_id)
     return {"ok": True, "schedule_id": schedule_id}

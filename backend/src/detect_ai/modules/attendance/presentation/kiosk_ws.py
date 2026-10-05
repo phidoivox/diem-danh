@@ -23,11 +23,8 @@ from loguru import logger
 from detect_ai.shared.kernel.database import Session
 from detect_ai.core.security import decode_access_token
 from detect_ai.models.user import User
-from detect_ai.recognition import gallery as gal_mod
-from detect_ai.recognition import pipeline as pipe_mod
-from detect_ai.recognition import service as svc
-from detect_ai.recognition.config import get_config
-from detect_ai.recognition.image import ImageDecodeError, decode_frame
+from detect_ai.modules.attendance.application.checkin import record_checkin
+from detect_ai.modules.recognition import public
 from detect_ai.services.settings_repo import load_min_checkout_gap
 
 router = APIRouter()
@@ -68,7 +65,7 @@ async def _auth_teacher(token: str | None, protocols: str | None = None) -> User
 @router.websocket("/api/v1/kiosk/ws")
 async def kiosk_ws(ws: WebSocket):
     await ws.accept()
-    cfg = get_config()
+    cfg = public.get_config()
     params = ws.query_params
     try:
         schedule_id = int(params.get("schedule_id", "0"))
@@ -94,18 +91,18 @@ async def kiosk_ws(ws: WebSocket):
             await ws.close()
             return
         class_id = sched.class_id
-        gallery = await gal_mod.load_gallery(s, class_id, ttl_s=cfg.gallery_cache_ttl_s)
+        gallery = await public.load_gallery(s, class_id, ttl_s=cfg.gallery_cache_ttl_s)
     if len(gallery) == 0:
         await ws.send_json({"error": "Lớp chưa có dữ liệu khuôn mặt", "gallery_size": 0})
         await ws.close()
         return
 
-    sess = pipe_mod.get_session(schedule_id, cfg)
+    sess = public.get_session(schedule_id, cfg)
     by_id = {e.student_id: e for e in gallery.entries}
     latest: asyncio.Queue = asyncio.Queue(maxsize=1)
     dropped = 0
     stop = asyncio.Event()
-    hook = svc.uniform_hook_factory()
+    hook = public.uniform_hook_factory()
     async with Session() as _s0:
         try:
             min_gap = await load_min_checkout_gap(_s0)  # cache 30s ở repo
@@ -142,8 +139,8 @@ async def kiosk_ws(ws: WebSocket):
             except asyncio.CancelledError:
                 break
             try:
-                img = await asyncio.to_thread(decode_frame, raw, int(cfg.kiosk_max_width))
-            except ImageDecodeError:
+                img = await asyncio.to_thread(public.decode_frame, raw, int(cfg.kiosk_max_width))
+            except public.ImageDecodeError:
                 continue
             except Exception:
                 continue
@@ -157,8 +154,14 @@ async def kiosk_ws(ws: WebSocket):
             faces = []
             try:
                 async with Session() as s:
-                    checked = await svc.commit_decisions(s, schedule_id, teacher.id, decisions, frame_bgr=img,
-                                                         min_gap_minutes=min_gap)
+                    checked = await record_checkin(
+                        s,
+                        schedule_id,
+                        teacher.id,
+                        decisions,
+                        frame_bgr=img,
+                        min_gap_minutes=min_gap,
+                    )
                     for d in decisions:
                         entry = by_id.get(d.student_id) if d.student_id else None
                         faces.append({
@@ -169,7 +172,7 @@ async def kiosk_ws(ws: WebSocket):
                             "full_name": entry.full_name if entry else None,
                             "score": round(d.score, 3),
                             "liveness": round(d.liveness, 3),
-                            "decision": svc.to_legacy(d.decision),
+                            "decision": public.to_legacy(d.decision),
                             "votes": d.votes,
                         })
             except Exception as e:  # noqa: BLE001

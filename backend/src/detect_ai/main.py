@@ -48,8 +48,7 @@ async def life(app: FastAPI):
 
     async def _warmup():
         try:
-            from .recognition.config import auto_tune, get_config
-            from .recognition.face_engine import FaceEngine
+            from .modules.recognition.public import FaceEngine, auto_tune, get_config
 
             cfg = auto_tune(get_config(force=True))
             logger.info(f"recognition: {cfg.describe()}")

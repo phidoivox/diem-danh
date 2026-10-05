@@ -71,6 +71,21 @@ def _remove_test_routes() -> None:
         pass
 
 
+def _clear_recognition_caches() -> None:
+    # Gallery/pipeline cache giữ theo class_id/schedule_id (process-global):
+    # test trước nạp gallery của class khác vào cùng slot id sẽ rò sang
+    # test sau (VD gallery_size 30 thay vì 1). Xóa để mỗi client HTTP thấy
+    # đúng dữ liệu fixture của chính nó.
+    try:
+        from detect_ai.recognition import gallery as _gal_mod
+        from detect_ai.recognition import pipeline as _pipe_mod
+
+        _gal_mod._cache.clear()
+        _pipe_mod._sessions.clear()
+    except Exception:
+        pass
+
+
 @pytest_asyncio.fixture
 async def make_client(session_maker_fixture):
     """Factory tạo AsyncClient cho test.
@@ -98,6 +113,7 @@ async def make_client(session_maker_fixture):
             await client.aclose()
             app.dependency_overrides.clear()
             _remove_test_routes()
+            _clear_recognition_caches()
 
     yield _factory
 
@@ -109,3 +125,4 @@ async def make_client(session_maker_fixture):
             pass
     app.dependency_overrides.clear()
     _remove_test_routes()
+    _clear_recognition_caches()
