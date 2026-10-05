@@ -222,7 +222,7 @@ async def v2_seed(session_maker_fixture):
         await s.refresh(c)
         s.add(ClassStudent(class_id=c.id, student_id=st.id))
         sch = Schedule(class_id=c.id, room_name="P1", study_date=date.today(),
-                       start_time=time(0, 0), end_time=time(23, 59), session_order=1)
+                       start_time=time(8, 0), end_time=time(10, 0), session_order=1)
         s.add(sch)
         s.add(FaceEmbedding(user_id=st.id, embedding=embedding_to_json(_vec(7)),
                             quality=0.9, source="avatar", is_active=True))

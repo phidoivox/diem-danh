@@ -29,6 +29,10 @@ from detect_ai.services.settings_repo import load_min_checkout_gap
 
 router = APIRouter()
 
+# ponytail: fallback mirrors legacy MIN_CHECKOUT_GAP_MINUTES=5 (ex-recognition/service.py);
+# canonical source now DB-backed load_min_checkout_gap (default 5); promote to shared const if reused.
+_FALLBACK_MIN_CHECKOUT_GAP_MINUTES = 5
+
 
 async def _auth_teacher(token: str | None, protocols: str | None = None) -> User | None:
     if not token and protocols:
@@ -107,7 +111,7 @@ async def kiosk_ws(ws: WebSocket):
         try:
             min_gap = await load_min_checkout_gap(_s0)  # cache 30s ở repo
         except Exception:
-            min_gap = svc.MIN_CHECKOUT_GAP_MINUTES
+            min_gap = _FALLBACK_MIN_CHECKOUT_GAP_MINUTES
 
     async def recv() -> None:
         nonlocal dropped
