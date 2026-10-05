@@ -14,7 +14,7 @@ from .api.routes_admin_settings import router as admin_settings
 from .api.routes_evaluation import router as admin_evaluation
 from .api.routes_kiosk import router as kiosk
 from .api.routes_kiosk_ws import router as kiosk_ws
-from .api.routes_leave_requests import router as leave_requests
+from .modules.leave.presentation.routes import router as leave_requests
 from .api.routes_student_portal import router as student_portal
 from .api.routes_teacher import router as teacher
 from .modules.identity.presentation.admin_routes import router as admin_users
