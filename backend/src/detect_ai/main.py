@@ -11,14 +11,14 @@ from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from .api.routes_admin_academic import router as admin_academic
 from .api.routes_admin_reports import router as admin_reports
 from .api.routes_admin_settings import router as admin_settings
-from .api.routes_admin_users import router as admin_users
-from .api.routes_auth import router as auth
 from .api.routes_evaluation import router as admin_evaluation
 from .api.routes_kiosk import router as kiosk
 from .api.routes_kiosk_ws import router as kiosk_ws
 from .api.routes_leave_requests import router as leave_requests
 from .api.routes_student_portal import router as student_portal
 from .api.routes_teacher import router as teacher
+from .modules.identity.presentation.admin_routes import router as admin_users
+from .modules.identity.presentation.routes import router as auth
 from .shared.kernel.database import Session, init_db
 from .shared.kernel.errors import integrity_error_handler
 from .shared.kernel.supabase import STORAGE_DIR
