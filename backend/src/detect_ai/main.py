@@ -12,8 +12,8 @@ from .modules.academic.presentation.routes import router as admin_academic
 from .modules.reporting.presentation.routes import router as admin_reports
 from .api.routes_admin_settings import router as admin_settings
 from .modules.evaluation.presentation.routes import router as admin_evaluation
-from .api.routes_kiosk import router as kiosk
-from .api.routes_kiosk_ws import router as kiosk_ws
+from .modules.attendance.presentation.kiosk_routes import router as kiosk
+from .modules.attendance.presentation.kiosk_ws import router as kiosk_ws
 from .modules.leave.presentation.routes import router as leave_requests
 from .modules.reporting.presentation.portal_routes import router as student_portal
 from .modules.attendance.presentation.teacher_routes import router as teacher
