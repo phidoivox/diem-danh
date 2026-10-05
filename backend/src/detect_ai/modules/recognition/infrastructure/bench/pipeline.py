@@ -4,7 +4,7 @@ import time
 from concurrent.futures import Future, ThreadPoolExecutor
 import numpy as np
 import supervision as sv
-from ..core import config as C
+from detect_ai.modules.recognition.infrastructure import config as C
 from .face_recognizer import FaceRecognizer
 from .tracker import Tracker
 from .yolo_uniform_detector import UniformDetector, garments_of, uniform_status

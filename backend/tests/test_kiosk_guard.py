@@ -1,4 +1,4 @@
-from detect_ai.api.deps_kiosk import adaptive_feedback
+from detect_ai.modules.attendance.presentation.deps import adaptive_feedback
 
 
 def test_adaptive_feedback_slow_frame_throttles():

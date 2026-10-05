@@ -27,7 +27,7 @@ from detect_ai.core.supabase import STORAGE_DIR, SupabaseStorageHelper
 from detect_ai.models.academic import Class, ClassStudent, Schedule
 from detect_ai.models.user import User
 from detect_ai.modules.recognition import public
-from detect_ai.services.settings_repo import load_min_checkout_gap
+from detect_ai.shared.kernel.settings import load_min_checkout_gap
 from detect_ai.api.deps_auth import require_admin, require_teacher
 from detect_ai.api.deps_kiosk import adaptive_feedback, authorize_kiosk_schedule
 from ..application.checkin import record_checkin

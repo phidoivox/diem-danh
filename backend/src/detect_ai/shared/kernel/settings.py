@@ -7,7 +7,7 @@ from typing import Mapping, Optional, Tuple
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from detect_ai.models.system_setting import SystemSetting
+from detect_ai.shared.kernel.system_setting import SystemSetting
 
 
 async def load_settings_map(session: AsyncSession) -> dict[str, str]:

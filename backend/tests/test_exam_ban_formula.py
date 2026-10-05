@@ -30,7 +30,7 @@ from detect_ai.models.system_setting import SystemSetting
 from detect_ai.models.user import Role, StudentProfile, User
 from detect_ai.services import report_service
 from detect_ai.services.report_service import calculate_class_exam_ban
-from detect_ai.services.settings_repo import load_exam_ban_thresholds
+from detect_ai.shared.kernel.settings import load_exam_ban_thresholds
 
 
 async def _seed_class(

@@ -4,7 +4,7 @@ import numpy as np
 import supervision as sv
 from loguru import logger
 from ultralytics import YOLO
-from ..core import config as C
+from detect_ai.modules.recognition.infrastructure import config as C
 
 class UniformDetector:
     def __init__(self, weights: str | None = None):

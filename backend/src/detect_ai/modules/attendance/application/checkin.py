@@ -3,7 +3,7 @@ from __future__ import annotations
 from typing import Any, Iterable
 
 from detect_ai.modules.recognition.public import commit_decisions
-from detect_ai.services.settings_repo import load_min_checkout_gap
+from detect_ai.shared.kernel.settings import load_min_checkout_gap
 
 
 async def record_checkin(

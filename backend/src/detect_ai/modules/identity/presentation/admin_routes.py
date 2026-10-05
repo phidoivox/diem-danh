@@ -9,7 +9,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from detect_ai.api.files import decode_upload
-from detect_ai.services.storage_service import upload_avatar
+from detect_ai.shared.kernel.storage_service import upload_avatar
 from detect_ai.shared.kernel.deps import get_db
 from detect_ai.shared.kernel.pagination import paginate_stmt
 from detect_ai.shared.kernel.security import get_password_hash

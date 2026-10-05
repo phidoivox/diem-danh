@@ -1,7 +1,7 @@
 from datetime import date, datetime, time
 from types import SimpleNamespace
 
-from detect_ai.api.deps_kiosk import in_session_window
+from detect_ai.modules.attendance.presentation.deps import in_session_window
 
 
 def _sched(start, end, study_date=None):

@@ -11,7 +11,7 @@ class FaceRecognizer:
     def _load(self):
         if self.app is None:
             from insightface.app import FaceAnalysis
-            from ..core import config as C
+            from detect_ai.modules.recognition.infrastructure import config as C
             kw: dict = {"name": "buffalo_s", "providers": ["CPUExecutionProvider"]}
             if C.LIVENESS:  # liveness.onnx (~1.4MB) tu tai lan dau ve ~/.insightface/addons/
                 kw.update(addons=["liveness"], liveness_mode="observe",

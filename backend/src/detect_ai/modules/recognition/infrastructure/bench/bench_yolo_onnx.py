@@ -32,7 +32,7 @@ def _predict_boxes(model, img: np.ndarray, conf: float, imgsz: int):
     return out
 
 
-from detect_ai.recognition.geometry import iou as _iou
+from detect_ai.modules.recognition.infrastructure.geometry import iou as _iou
 
 
 def _parity(b_pt: list[dict], b_onnx: list[dict], iou_thr: float = 0.5) -> tuple[bool, str]:

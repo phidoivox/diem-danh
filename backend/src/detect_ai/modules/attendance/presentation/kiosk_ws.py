@@ -25,7 +25,7 @@ from detect_ai.core.security import decode_access_token
 from detect_ai.models.user import User
 from detect_ai.modules.attendance.application.checkin import record_checkin
 from detect_ai.modules.recognition import public
-from detect_ai.services.settings_repo import load_min_checkout_gap
+from detect_ai.shared.kernel.settings import load_min_checkout_gap
 
 router = APIRouter()
 

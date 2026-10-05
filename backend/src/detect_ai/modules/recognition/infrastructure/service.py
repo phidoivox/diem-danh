@@ -114,7 +114,7 @@ async def commit_decisions(db, schedule_id: int, teacher_id: int,
     Trả dict {"checked_in": [...], "checked_out": [...], "already_done": [...]}
     danh sách student_id. Giữ tương thích: caller cũ chỉ đọc checked_in.
     """
-    from detect_ai.services import image_service as _img_svc
+    from detect_ai.modules.recognition.infrastructure import image_service as _img_svc
 
     now = datetime.now(timezone.utc)
     checked_in: list[int] = []

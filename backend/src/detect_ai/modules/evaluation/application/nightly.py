@@ -13,7 +13,7 @@ from detect_ai.models.leave_request import LeaveRequest, LeaveStatus
 from ..infrastructure.models import PointLedger
 from detect_ai.models.user import StudentProfile
 from ..domain.policy import decide_attendance
-from detect_ai.services.settings_repo import as_bool, as_int, load_settings_map
+from detect_ai.shared.kernel.settings import as_bool, as_int, load_settings_map
 
 
 async def run_nightly_evaluation(

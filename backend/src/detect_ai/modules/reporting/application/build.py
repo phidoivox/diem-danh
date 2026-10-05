@@ -16,7 +16,7 @@ from detect_ai.shared.kernel.timeutil import now_vn, today_vn
 from detect_ai.models.academic import Class, ClassStudent, Schedule
 from detect_ai.models.attendance_v2 import Attendance, AttendanceStatus
 from detect_ai.models.user import User
-from detect_ai.services.settings_repo import load_exam_ban_thresholds
+from detect_ai.shared.kernel.settings import load_exam_ban_thresholds
 # Vắng quy đổi: V = N_vắng + 0.5 × N_vắng_nửa_buổi (EXCUSED không tính).
 # Hằng số dùng chung từ domain/policies/exam_ban_policy (nguồn duy nhất).
 from detect_ai.domain.policies.exam_ban_policy import HALF_ABSENT_WEIGHT  # noqa: E402
