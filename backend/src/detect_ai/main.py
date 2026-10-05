@@ -16,7 +16,7 @@ from .api.routes_kiosk import router as kiosk
 from .api.routes_kiosk_ws import router as kiosk_ws
 from .modules.leave.presentation.routes import router as leave_requests
 from .modules.reporting.presentation.portal_routes import router as student_portal
-from .api.routes_teacher import router as teacher
+from .modules.attendance.presentation.teacher_routes import router as teacher
 from .modules.identity.presentation.admin_routes import router as admin_users
 from .modules.identity.presentation.routes import router as auth
 from .shared.kernel.database import Session, init_db
