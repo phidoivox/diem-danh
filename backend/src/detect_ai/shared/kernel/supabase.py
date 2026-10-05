@@ -3,7 +3,13 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Optional
 
-from storage3 import AsyncStorageClient, create_client
+try:
+    import storage3  # ponytail: guard — base requires storage3; env moved local-only (drift-supabase.patch), Task 9 resolves
+    from storage3 import AsyncStorageClient, create_client
+except ImportError:  # pragma: no cover
+    storage3 = None
+    AsyncStorageClient = None  # type: ignore[assignment,misc]
+    create_client = None  # type: ignore[assignment]
 
 from .config import DATA_DIR, SUPABASE_SERVICE_KEY, SUPABASE_URL
 
