@@ -11,7 +11,7 @@ from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from .modules.academic.presentation.routes import router as admin_academic
 from .api.routes_admin_reports import router as admin_reports
 from .api.routes_admin_settings import router as admin_settings
-from .api.routes_evaluation import router as admin_evaluation
+from .modules.evaluation.presentation.routes import router as admin_evaluation
 from .api.routes_kiosk import router as kiosk
 from .api.routes_kiosk_ws import router as kiosk_ws
 from .modules.leave.presentation.routes import router as leave_requests
@@ -22,7 +22,7 @@ from .modules.identity.presentation.routes import router as auth
 from .shared.kernel.database import Session, init_db
 from .shared.kernel.errors import integrity_error_handler
 from .shared.kernel.supabase import STORAGE_DIR
-from .services.evaluation_service import run_nightly_evaluation
+from .modules.evaluation.public import run_nightly_evaluation
 
 
 @asynccontextmanager
