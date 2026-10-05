@@ -8,7 +8,7 @@ from loguru import logger
 from prometheus_fastapi_instrumentator import Instrumentator
 from sqlalchemy.exc import IntegrityError
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
-from .api.routes_admin_academic import router as admin_academic
+from .modules.academic.presentation.routes import router as admin_academic
 from .api.routes_admin_reports import router as admin_reports
 from .api.routes_admin_settings import router as admin_settings
 from .api.routes_evaluation import router as admin_evaluation
