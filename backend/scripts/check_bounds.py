@@ -13,6 +13,7 @@ FORBIDDEN = {
 }
 CROSS_FROM_RE = re.compile(r"from\s+detect_ai\.modules\.([a-z_]+)\.([a-z_]+)")
 CROSS_IMPORT_RE = re.compile(r"import\s+detect_ai\.modules\.([a-z_]+)\.([a-z_]+)")
+CROSS_FROM_MOD_RE = re.compile(r"from\s+detect_ai\.modules\.([a-z_]+)\s+import\s+([^\n#]+)")
 
 
 def main() -> int:
@@ -29,6 +30,13 @@ def main() -> int:
         for target, sub in hits:
             if target != owner and sub not in ("public", "__init__"):
                 violations.append(f"{rel}: import sâu modules.{target}.{sub} (phải qua public)")
+        for target, names in CROSS_FROM_MOD_RE.findall(text):
+            if target == owner:
+                continue
+            for name in re.split(r"[,\s]+", names.strip().strip("()")):
+                base = name.split(" as ")[0].strip()
+                if base and base != "public" and not base.startswith("__"):
+                    violations.append(f"{rel}: import sâu modules.{target}.{base} (phải qua public)")
         for pkg in FORBIDDEN.get(layer, ()):
             if re.search(rf"^\s*(from|import)\s+{pkg}\b", text, re.M):
                 violations.append(f"{rel}: layer {layer} cấm import {pkg}")
