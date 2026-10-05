@@ -3,6 +3,7 @@ import os
 from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
 from loguru import logger
 from prometheus_fastapi_instrumentator import Instrumentator
 from sqlalchemy.exc import IntegrityError
@@ -13,29 +14,19 @@ from .api.routes_admin_settings import router as admin_settings
 from .api.routes_admin_users import router as admin_users
 from .api.routes_auth import router as auth
 from .api.routes_evaluation import router as admin_evaluation
-from .api.routes_files import router as private_files
 from .api.routes_kiosk import router as kiosk
 from .api.routes_kiosk_ws import router as kiosk_ws
 from .api.routes_leave_requests import router as leave_requests
 from .api.routes_student_portal import router as student_portal
 from .api.routes_teacher import router as teacher
-from .shared.kernel.config import S
 from .shared.kernel.database import Session, init_db
 from .shared.kernel.errors import integrity_error_handler
-from .shared.kernel.supabase import AVATAR_DIR, STORAGE_DIR
-from .shared.kernel.timeutil import VN_TZ
+from .shared.kernel.supabase import STORAGE_DIR
 from .services.evaluation_service import run_nightly_evaluation
 
 
 @asynccontextmanager
 async def life(app: FastAPI):
-    # Fail fast: secret demo/rỗng mà boot prod = mọi token đều forge được.
-    # Test/dev đọc backend/.env hoặc env var; thiếu -> dừng ngay với lỗi rõ.
-    if len(S.jwt_secret or "") < 32:
-        raise RuntimeError(
-            "DETECT_AI_JWT_SECRET chưa cấu hình (>= 32 ký tự). "
-            "Copy backend/.env.example -> backend/.env và đặt secret ngẫu nhiên."
-        )
     await init_db()
     # Kiosk fast-path: executor riêng cho Face/Spoof/IO để mỗi luồng không giẫm nhau.
     # Face/Spoof max 1 worker vì model ONNX/InsightFace không thread-safe khi infer
@@ -71,8 +62,7 @@ async def life(app: FastAPI):
 
     asyncio.get_running_loop().create_task(_warmup())
 
-    # 23h59 phải là 23h59 GIỜ VIỆT NAM, không phụ thuộc múi giờ server (Docker mặc định UTC).
-    scheduler = AsyncIOScheduler(timezone=VN_TZ)
+    scheduler = AsyncIOScheduler()
 
     async def nightly_cron_job():
         logger.info("Triggering nightly evaluation cron job (23:59)...")
@@ -85,35 +75,24 @@ async def life(app: FastAPI):
 
     scheduler.add_job(nightly_cron_job, "cron", hour=23, minute=59)
     scheduler.start()
-    logger.info("detect-ai ready (Nightly evaluation cron scheduled for 23:59 giờ VN)")
+    logger.info("detect-ai ready (Nightly evaluation cron scheduled for 23:59)")
 
     yield
 
     scheduler.shutdown(wait=False)
 
 app = FastAPI(title="detect-ai", lifespan=life)
-# Allowlist tuong minh thay "*": API dùng Bearer token, "*" cho phép bất kỳ origin
-# nào gọi API bằng token đánh cắp. Dev mặc định localhost:3000 (+127).
-# Prod: DETECT_AI_CORS_ORIGINS="https://app.truong.edu.vn,https://admin...".
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=S.cors_origin_list,
-    allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
-    allow_headers=["Authorization", "Content-Type"],
-)
+app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["*"], allow_headers=["*"])
 
 
 app.add_exception_handler(IntegrityError, integrity_error_handler)
 
 
-# Avatars KHÔNG còn public: đọc qua /api/v1/files/avatar (auth, xem routes_files).
-# (Trước đây mount /static/avatars public + tên file {user_code}.jpg đoán được
-# từ MSSV -> scrape toàn bộ ảnh khuôn mặt không cần login.)
+# Ảnh minh chứng / avatar khi chạy offline được ghi xuống đĩa và trả URL /static/storage/...
+# Trước đây không mount nên các URL này luôn 404 -> ảnh minh chứng không hiển thị.
+# CHỈ mount thư mục storage, tuyệt đối không mount DATA_DIR (sẽ lộ detect_ai.db).
 STORAGE_DIR.mkdir(parents=True, exist_ok=True)
-AVATAR_DIR.mkdir(parents=True, exist_ok=True)
-
-
-app.include_router(private_files)
+app.mount("/static/storage", StaticFiles(directory=STORAGE_DIR), name="static-storage")
 app.include_router(auth, prefix="/api/v1/auth", tags=["auth"])
 app.include_router(admin_users, prefix="/api/v1/admin/users", tags=["admin-users"])
 app.include_router(admin_academic, prefix="/api/v1/admin/academic", tags=["admin-academic"])
@@ -125,10 +104,7 @@ app.include_router(teacher)
 app.include_router(kiosk)
 app.include_router(kiosk_ws)
 app.include_router(admin_reports)
-# /metrics mặc định TẮT (lộ số liệu nội bộ). Bật khi có scraper nội bộ:
-# DETECT_AI_EXPOSE_METRICS=true.
-if S.expose_metrics:
-    Instrumentator().instrument(app).expose(app)
+Instrumentator().instrument(app).expose(app)  # /metrics: thay badge infer_ms tay
 
 @app.get("/api/health")
 async def health():

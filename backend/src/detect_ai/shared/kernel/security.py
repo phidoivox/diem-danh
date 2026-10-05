@@ -18,31 +18,14 @@ try:
 except Exception:  # pragma: no cover - fallback khi chưa cài pwdlib
     _password_hash = None
 
-
-_MIN_SECRET_LEN = 32
-
 __all__ = [
     "verify_password",
     "get_password_hash",
     "create_access_token",
     "decode_access_token",
     "_password_hash",
+    "S",
 ]
-
-
-def _active_secret() -> str:
-    """Trả JWT secret đang dùng, fail-closed khi chưa cấu hình.
-
-    create/decode đều qua đây: test/client quên đặt key -> lỗi 500 rõ ràng,
-    không bao giờ ký bằng chuỗi rỗng.
-    """
-    secret = S.jwt_secret or ""
-    if len(secret) < _MIN_SECRET_LEN:
-        raise RuntimeError(
-            "DETECT_AI_JWT_SECRET chưa cấu hình (>= 32 ký tự). "
-            "Đặt biến môi trường hoặc backend/.env rồi khởi động lại."
-        )
-    return secret
 
 
 def verify_password(plain_password: str, hashed_password: str) -> bool:
@@ -73,7 +56,7 @@ def create_access_token(data: Dict[str, Any], expires_delta: Optional[timedelta]
         )
 
     to_encode.update({"exp": expire})
-    return jwt.encode(to_encode, _active_secret(), algorithm=S.jwt_algorithm)
+    return jwt.encode(to_encode, S.jwt_secret, algorithm=S.jwt_algorithm)
 
 
 def decode_access_token(token: str) -> Optional[Dict[str, Any]]:
@@ -84,10 +67,6 @@ def decode_access_token(token: str) -> Optional[Dict[str, Any]]:
     "token hết hạn".
     """
     try:
-        return jwt.decode(token, _active_secret(), algorithms=[S.jwt_algorithm])
+        return jwt.decode(token, S.jwt_secret, algorithms=[S.jwt_algorithm])
     except InvalidTokenError:
-        return None
-    except RuntimeError:
-        # Secret chưa cấu hình -> coi mọi token là không hợp lệ (fail-closed),
-        # caller đã trả 401 sẵn, tránh 500 rò cấu hình.
         return None

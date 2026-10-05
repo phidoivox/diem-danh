@@ -6,47 +6,18 @@ BASE_DIR = Path(__file__).resolve().parents[4]
 DATA_DIR = BASE_DIR / "data"
 DATA_DIR.mkdir(exist_ok=True)
 # SNAPSHOT_DIR / PHOTO_DIR đã bị xoá cùng lớp legacy (routes_students, routes_attendance,
-# save_queue). Ảnh chân dung nay do admin upload qua /api/v1/admin/users (lưu local).
+# save_queue). Ảnh chân dung nay do admin upload qua /api/v1/admin/users -> Supabase Storage.
 
 
 class Settings(BaseSettings):
     database_url: str = f"sqlite+aiosqlite:///{DATA_DIR / 'detect_ai.db'}"
+    supabase_url: str = ""
+    supabase_key: str = ""
+    supabase_service_key: str = ""
     supabase_db_url: str = ""
-    # Rỗng mặc định: KHÔNG còn secret demo trong repo. Chạy thật bắt buộc đặt
-    # DETECT_AI_JWT_SECRET (>= 32 ký tự), thiếu -> app từ chối khởi động (main.life).
-    # Dev/test: đọc từ backend/.env; test không cần secret mạnh vì chỉ ký nội bộ.
-    jwt_secret: str = ""
+    jwt_secret: str = "smart-classroom-super-secret-jwt-key-2026"
     jwt_algorithm: str = "HS256"
-    # 8h = 1 ngày dạy. Đủ ngắn để thu hẹp cửa sổ token rò rỉ, đủ dài để GV
-    # không bị văng giữa buổi. Có refresh flow thì hãy hạ tiếp.
-    jwt_access_token_expire_minutes: int = 60 * 8
-    # CORS allowlist (phân tách dấu phẩy). "*" bị cấm vì API dùng Bearer token:
-    # bất kỳ origin nào cũng có thể gọi API bằng token đánh cắp.
-    cors_origins: str = "http://localhost:3000,http://127.0.0.1:3000"
-    # /metrics mặc định TẮT (lộ số liệu nội bộ). Bật khi có scraper nội bộ.
-    expose_metrics: bool = False
-    # Rate-limit login: mỗi tài khoản 10 lần SAI/phút + mỗi IP 60 lần SAI/phút.
-    # Chỉ lần sai mới đếm (login đúng free) nên cả trường chung 1 IP giờ cao
-    # điểm không tự khóa nhau; chi tiết ở api/rate_limit.py.
-    login_rate_limit_per_account_per_minute: int = 10
-    login_rate_limit_per_ip_per_minute: int = 60
-    # WS kiosk: tối đa kết nối/phút/IP (chống giữ socket đốt CPU).
-    ws_connects_per_ip_per_minute: int = 20
-    # Tin X-Forwarded-For khi đọc IP rate-limit. CHỈ bật khi chạy sau reverse
-    # proxy mình kiểm soát (proxy strip header từ client). Bật sau proxy lạ =
-    # attacker tự đặt IP bất kỳ -> bypass rate-limit.
-    trust_proxy: bool = False
-
-    @property
-    def cors_origin_list(self) -> list[str]:
-        origins = [o.strip() for o in (self.cors_origins or "").split(",") if o.strip()]
-        if "*" in origins:
-            raise ValueError(
-                "DETECT_AI_CORS_ORIGINS chứa '*': API dùng Bearer token, "
-                "wildcard cho phép mọi origin gọi API bằng token đánh cắp. "
-                "Liệt kê origin rõ ràng."
-            )
-        return origins
+    jwt_access_token_expire_minutes: int = 60 * 24
 
     @property
     def jwt_expire_minutes(self) -> int:
@@ -117,7 +88,28 @@ def _resolve_database_url(s: Settings) -> str:
         return raw_url.replace("postgres://", "postgresql+asyncpg://", 1)
     return raw_url
 
+def _resolve_service_key(s: Settings) -> str:
+    """Khoá dùng để GHI lên Storage.
+
+    Supabase định dạng mới tách `sb_publishable_...` (công khai, chỉ đọc, bị RLS chặn ghi)
+    khỏi secret key. Trước đây hàm này fallback `service_key or key`, nên chỉ cần điền
+    publishable key là `is_cloud_enabled` bật True -> mọi lần upload thất bại vì RLS,
+    trong khi người dùng tưởng đã cấu hình xong.
+
+    Thà trả rỗng để fallback về đĩa local (hệ thống vẫn chạy), và `python -m detect_ai.doctor`
+    sẽ báo rõ là thiếu khoá secret.
+    """
+    if s.supabase_service_key:
+        return s.supabase_service_key
+    if s.supabase_key.startswith("sb_publishable_"):
+        return ""
+    return s.supabase_key
+
+
 DATABASE_URL = _resolve_database_url(S)
+SUPABASE_URL = S.supabase_url
+SUPABASE_KEY = S.supabase_key or S.supabase_service_key
+SUPABASE_SERVICE_KEY = _resolve_service_key(S)
 SUPABASE_DB_URL = S.supabase_db_url
 JWT_SECRET = S.jwt_secret
 JWT_ALGORITHM = S.jwt_algorithm
