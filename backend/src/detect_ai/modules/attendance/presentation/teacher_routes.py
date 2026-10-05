@@ -20,7 +20,7 @@ from detect_ai.services.report_service import (
     generate_excel_exam_ban,
 )
 from detect_ai.modules.identity.public import require_teacher
-from detect_ai.api.helpers import get_or_404
+from detect_ai.shared.kernel.helpers import get_or_404
 
 router = APIRouter(
     prefix="/api/v1/teacher",
@@ -34,7 +34,7 @@ router = APIRouter(
 # =====================================================================
 
 
-from detect_ai.api.deps_kiosk import in_window
+from detect_ai.modules.attendance.presentation.deps import in_window
 
 
 def _current_session(
