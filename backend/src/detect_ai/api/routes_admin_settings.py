@@ -1,40 +1,16 @@
 from __future__ import annotations
 
 from typing import Any, Dict, List, Optional
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends
 from pydantic import BaseModel, ConfigDict
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..core.deps import get_db
 from detect_ai.shared.kernel.system_setting import SystemSetting
-from .deps_auth import require_admin
+from .deps_auth import require_role
 
-router = APIRouter(dependencies=[Depends(require_admin)])
-
-# Hai ngưỡng phần trăm của công thức cấm thi: nhận cả số thập phân (VD 12.5)
-# nhưng phải là số trong 0..100. Chặn ngay ở API thay vì để giá trị rác nằm
-# trong DB rồi bị bỏ qua âm thầm lúc tính báo cáo.
-PERCENT_SETTING_KEYS = ("WARNING_ABSENCE_PERCENT", "MAX_ABSENCE_PERCENT_EXAM_BAN")
-
-
-def validate_setting_value(key: str, value: Any) -> str:
-    """Kiểm tra + chuẩn hoá 1 giá trị cấu hình trước khi ghi. Trả về chuỗi để lưu."""
-    raw = str(value).strip()
-    if key in PERCENT_SETTING_KEYS:
-        try:
-            percent = float(raw)
-        except (TypeError, ValueError):
-            raise HTTPException(
-                status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
-                detail=f"{key} phải là số phần trăm (ví dụ 12.5)",
-            )
-        if not 0 <= percent <= 100:
-            raise HTTPException(
-                status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
-                detail=f"{key} phải nằm trong khoảng 0-100",
-            )
-    return raw
+router = APIRouter(dependencies=[Depends(require_role("ADMIN"))])
 
 
 class SettingItem(BaseModel):
@@ -85,7 +61,7 @@ async def update_settings(
     settings_to_update = body.get("settings", body) if isinstance(body.get("settings"), dict) else body
 
     for k, v in settings_to_update.items():
-        val_str = validate_setting_value(k, v)
+        val_str = str(v)
         if k in existing_map:
             existing_map[k].value = val_str
         else:
