@@ -74,3 +74,13 @@ Thumbs.db
 # Local bench/weight artifacts (never source)
 backend/bench_*_out.txt
 backend/best.pt
+*.onnx
+pytest-of-vohoa/
+backend/pytest-of-vohoa/
+frontend/pytest-of-vohoa/
+*.log
+*.ipynb
+.tmp_oldpaths.txt
+backend/bounds_raw.txt
+tmp9c/
+backend/colab_train_uniform.ipynb

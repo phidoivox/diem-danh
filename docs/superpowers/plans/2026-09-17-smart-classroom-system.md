@@ -1,5 +1,9 @@
 # Kế hoạch Triển khai: Hệ thống Quản lý Lớp học Thông minh (Smart Classroom Management System)
 
+> **GHI CHÚ LỊCH SỬ (09-2026):** Chức năng điểm danh khuôn mặt (FaceID) và Kiosk AI đã bị **loại bỏ hoàn toàn**
+> khỏi mã nguồn (xem `backend/sql/05_drop_face_embedding.sql`). Tài liệu này được giữ nguyên vì mục đích
+> tham khảo lịch sử.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Xây dựng hoàn chỉnh hệ thống Quản lý Lớp học Thông minh tích hợp Điểm danh AI (FaceID + Đồng phục + Check-in/out), 3 phân hệ Portal (Sinh viên, Giảng viên, Quản trị viên), luồng nộp và duyệt đơn nghỉ phép trực tuyến kèm minh chứng, công cụ tính điểm chuyên cần tự động 23h59 (Idempotent Cron & Point Ledger) và xuất báo cáo cấm thi chuẩn quy chế trên nền tảng Supabase.

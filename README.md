@@ -140,7 +140,7 @@ npm run dev                               # http://localhost:3000
 - Mọi biến động điểm **bắt buộc** đi qua sổ cái `point_ledger`; `student_profiles.total_point` là tổng hợp từ sổ cái và **không âm** (`MAX(0, ...)`).
 
 ### 4.2 Đánh giá tự động 23h59 (Idempotent)
-- APScheduler chạy hằng ngày lúc **23:59**; Admin có thể chạy bù qua `POST /api/v1/admin/evaluation/run-now`.
+- APScheduler chạy hằng ngày lúc **23:59 giờ Việt Nam** (`Asia/Ho_Chi_Minh`, không phụ thuộc múi giờ server); Admin có thể chạy bù qua `POST /api/v1/admin/evaluation/run-now`.
 - Chỉ xử lý bản ghi `is_evaluated = FALSE` ⇒ chạy lại **không trừ điểm hai lần**.
 - Tôn trọng tuyệt đối cờ `is_manual_override = TRUE` do giảng viên sửa tay.
 - Đơn nghỉ phép đã duyệt ⇒ `EXCUSED`, `point_delta = 0`.
@@ -152,8 +152,14 @@ npm run dev                               # http://localhost:3000
 
 ### 4.4 Công thức cấm thi
 - Hệ số quy đổi: `V = N_vắng + 0.5 × N_vắng_nửa_buổi` (buổi `EXCUSED` không tính).
-- **Cảnh báo lũy kế:** `V / N_buổi_đã_diễn_ra × 100% ≥ 15%`.
-- **Cấm thi chính thức:** `V / total_sessions × 100% ≥ 20%` → xuất hiện trong báo cáo & file Excel cấm thi.
+- **Buổi "đã diễn ra"** = buổi đã **kết thúc** theo giờ Việt Nam. Buổi hôm nay chưa tới/chưa tan
+  **không** được tính — nếu tính thì mọi sinh viên đều bị coi là vắng buổi đó và có thể bị cấm thi oan.
+- Buổi đã kết thúc mà **không có bản ghi điểm danh** ⇒ tính là vắng không phép.
+- **Cảnh báo lũy kế:** `V / N_buổi_đã_kết_thúc × 100% ≥ WARNING_ABSENCE_PERCENT` (mặc định `15`).
+- **Cấm thi chính thức:** `V / classes.total_sessions × 100% ≥ MAX_ABSENCE_PERCENT_EXAM_BAN`
+  (mặc định `20`) → xuất hiện trong báo cáo & file Excel cấm thi.
+- Hai ngưỡng nhận **số thập phân** (VD `12.5`); `PUT /api/v1/admin/settings` từ chối giá trị không
+  phải số hoặc ngoài khoảng `0–100` bằng HTTP `422`.
 
 ### 4.5 Ràng buộc an toàn & bảo mật
 - **Chống trùng phòng:** không cho phép 2 lịch học cùng phòng, cùng ngày, chồng lấn thời gian.
@@ -176,7 +182,7 @@ Bộ test **E2E** (`backend/tests/test_e2e_flow.py`) đi qua đúng các HTTP en
 2. Quên check-out ⇒ Cron đánh **vắng nửa buổi, -2** điểm.
 3. Nghỉ có phép (duyệt trước 23h59) ⇒ **EXCUSED, 0** điểm.
 4. Duyệt đơn muộn sau 23h59 ⇒ hệ thống **hoàn điểm** tự động (`LEAVE_REFUND`).
-5. Vắng > 20% số buổi ⇒ xuất hiện trong **danh sách cấm thi** và **file Excel** (Giảng viên & Admin).
+5. Vắng ≥ 20% số buổi ⇒ xuất hiện trong **danh sách cấm thi** và **file Excel** (Giảng viên & Admin).
 
 Ngoài ra còn kiểm thử: ma trận RBAC, tính Idempotent của Cron và **bất biến sổ cái**
 (`Σ point_delta = total_point - 100`).

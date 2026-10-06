@@ -1,4 +1,9 @@
 # ĐẶC TẢ THIẾT KẾ KIẾN TRÚC HỆ THỐNG (PHIÊN BẢN 2.0 - ĐÃ CẬP NHẬT)
+
+> **GHI CHÚ LỊCH SỬ (09-2026):** Chức năng điểm danh khuôn mặt (FaceID: InsightFace + Faiss + liveness,
+> Kiosk AI `/diem-danh`, `POST /kiosk-record`, cột `student_profiles.face_embedding`) đã bị **loại bỏ hoàn toàn**
+> khỏi mã nguồn. Tài liệu này được giữ nguyên vì mục đích tham khảo lịch sử; luồng điểm danh hiện tại là
+> giảng viên ghi nhận thủ công + Cron 23h59.
 ## HỆ THỐNG QUẢN LÝ LỚP HỌC THÔNG MINH (SMART CLASSROOM MANAGEMENT SYSTEM)
 **Đề tài:** Tích hợp Điểm danh AI, Kiểm soát Tác phong và Đánh giá Rèn luyện  
 **Nền tảng CSDL:** Supabase (PostgreSQL + Supabase Storage)  
