@@ -28,16 +28,16 @@ from openpyxl import load_workbook
 from sqlalchemy import event, select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
-from detect_ai.core.database import Base
-from detect_ai.core.deps import get_db
-from detect_ai.core.security import create_access_token, get_password_hash
+from detect_ai.shared.kernel.database import Base
+from detect_ai.shared.kernel.deps import get_db
+from detect_ai.shared.kernel.security import create_access_token, get_password_hash
 from detect_ai.main import app
-from detect_ai.models.academic import Class, ClassStudent, Schedule
-from detect_ai.models.attendance_v2 import Attendance, AttendanceStatus
-from detect_ai.models.leave_request import LeaveRequest, LeaveStatus
-from detect_ai.models.point_ledger import PointLedger
-from detect_ai.models.system_setting import SystemSetting
-from detect_ai.models.user import Role, StudentProfile, TeacherProfile, User
+from detect_ai.modules.academic.infrastructure.models import Class, ClassStudent, Schedule
+from detect_ai.modules.attendance.infrastructure.models import Attendance, AttendanceStatus
+from detect_ai.modules.leave.infrastructure.models import LeaveRequest, LeaveStatus
+from detect_ai.modules.evaluation.infrastructure.models import PointLedger
+from detect_ai.shared.kernel.system_setting import SystemSetting
+from detect_ai.modules.identity.infrastructure.models import Role, StudentProfile, TeacherProfile, User
 
 # =====================================================================
 # HẰNG SỐ DÙNG CHUNG
@@ -553,10 +553,17 @@ async def test_scenario_4_late_approval_refunds_points(client, test_session_make
 # KỊCH BẢN 5: Vắng quá 20% -> cấm thi + xuất file Excel
 # =====================================================================
 @pytest.mark.asyncio
-async def test_scenario_5_absence_over_threshold_is_exam_banned_and_exported(client, test_session_maker, seeded_data):
+async def test_scenario_5_absence_over_threshold_is_exam_banned_and_exported(client, test_session_maker, seeded_data, monkeypatch):
     class1 = seeded_data["class1_id"]
     schedule_ids = seeded_data["schedule_ids"]
     sv6 = seeded_data["student_id_by_code"][STUDENT_6]
+    # Cố định "bây giờ" = 23:59 hôm nay để cả 4 buổi (kể cả buổi tối 18-20h) đều
+    # đã kết thúc ⇒ elapsed_sessions == 4, test không phụ thuộc giờ chạy.
+    from detect_ai.modules.reporting.application import build as _build
+    monkeypatch.setattr(
+        _build, "now_vn",
+        lambda: datetime.combine(date.today(), time(23, 59)),
+    )
 
     # 0. Chuẩn bị: 5 sinh viên đầu đi học đầy đủ 4/4 buổi; SV006 chỉ có mặt buổi thứ 4
     #    => SV006 vắng 3/4 buổi đã diễn ra, tương đương 3/12 buổi của cả kỳ = 25% >= 20%.

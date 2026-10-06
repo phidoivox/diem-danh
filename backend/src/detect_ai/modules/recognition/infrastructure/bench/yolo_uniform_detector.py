@@ -1,13 +1,19 @@
 from __future__ import annotations
 from pathlib import Path
+from typing import Any
 import numpy as np
-import supervision as sv
 from loguru import logger
-from ultralytics import YOLO
 from detect_ai.modules.recognition.infrastructure import config as C
+
+try:
+    import supervision as sv
+except ImportError:  # env nhẹ không có supervision (test/dev): dùng duck-type
+    sv = None  # type: ignore[assignment]
 
 class UniformDetector:
     def __init__(self, weights: str | None = None):
+        from ultralytics import YOLO
+
         p = Path(weights or C.YOLO_WEIGHTS)
         # ponytail: custom weights truoc, fallback pretrained khi chua train xong.
         self.model = YOLO(str(p) if p.exists() else C.YOLO_FALLBACK)
@@ -18,7 +24,9 @@ class UniformDetector:
         except Exception as e:
             logger.debug(f"yolo warmup skip: {e}")
 
-    def predict(self, frame: np.ndarray) -> sv.Detections:
+    def predict(self, frame: np.ndarray) -> Any:
+        if sv is None:
+            raise ImportError("supervision is required for UniformDetector.predict")
         r = self.model.predict(frame, conf=C.YOLO_CONF, imgsz=C.YOLO_IMGSZ, verbose=False)[0]
         return sv.Detections.from_ultralytics(r)
 
@@ -35,7 +43,7 @@ def uniform_status(names: list[str], has_uniform_model: bool = True) -> tuple[st
     return ("ok" if not bad else "violation", bad)
 
 
-def garments_of(det: sv.Detections, person_box: np.ndarray, names) -> list[str]:
+def garments_of(det: Any, person_box: np.ndarray, names) -> list[str]:
     """Vector hoa: tim uniform box nam trong person box bang numpy, khong loop O(n^2)."""
     if len(det) == 0:
         return []

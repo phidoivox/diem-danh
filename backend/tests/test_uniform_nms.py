@@ -1,5 +1,5 @@
 import numpy as np
-from detect_ai.recognition.uniform_engine import _nms
+from detect_ai.modules.recognition.infrastructure.uniform_engine import _nms
 
 
 def test_nms_suppresses_overlapping_duplicate():

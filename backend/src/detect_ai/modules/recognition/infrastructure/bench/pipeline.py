@@ -3,14 +3,21 @@ import threading
 import time
 from concurrent.futures import Future, ThreadPoolExecutor
 import numpy as np
-import supervision as sv
+from typing import Any
 from detect_ai.modules.recognition.infrastructure import config as C
 from .face_recognizer import FaceRecognizer
 from .tracker import Tracker
 from .yolo_uniform_detector import UniformDetector, garments_of, uniform_status
 
-box_ann = sv.BoxAnnotator()
-label_ann = sv.LabelAnnotator()
+try:
+    import supervision as sv
+
+    box_ann = sv.BoxAnnotator()
+    label_ann = sv.LabelAnnotator()
+except ImportError:  # env nhẹ không có supervision: annotate=None, logic vẫn chạy
+    sv = None  # type: ignore[assignment]
+    box_ann = None
+    label_ann = None
 
 class Pipeline:
     def __init__(self, yolo: UniformDetector | None = None, face: FaceRecognizer | None = None):

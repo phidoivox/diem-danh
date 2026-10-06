@@ -1,7 +1,7 @@
 from datetime import datetime, time
 from types import SimpleNamespace
 
-from detect_ai.api.routes_teacher import _current_session
+from detect_ai.modules.attendance.presentation.teacher_routes import _current_session
 
 
 def _make(start, end, sid=1):

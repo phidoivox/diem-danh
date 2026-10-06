@@ -1,5 +1,5 @@
 import numpy as np
-from detect_ai.recognition.geometry import iou
+from detect_ai.modules.recognition.infrastructure.geometry import iou
 
 
 def test_iou_identical_boxes_is_one():

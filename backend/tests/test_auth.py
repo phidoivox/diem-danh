@@ -5,14 +5,14 @@ import pytest_asyncio
 from httpx import AsyncClient
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from detect_ai.core.security import (
+from detect_ai.shared.kernel.security import (
     create_access_token,
     decode_access_token,
     get_password_hash,
     verify_password,
 )
 from detect_ai.main import app
-from detect_ai.models.user import Role, StudentProfile, TeacherProfile, User
+from detect_ai.modules.identity.infrastructure.models import Role, StudentProfile, TeacherProfile, User
 
 
 @pytest_asyncio.fixture
@@ -282,8 +282,8 @@ async def test_auth_me_missing_or_invalid_token(client: AsyncClient, seeded_sess
 @pytest.mark.asyncio
 async def test_rbac_require_role(client: AsyncClient, seeded_session: AsyncSession):
     from fastapi import Depends
-    from detect_ai.api.deps_auth import require_role
-    from detect_ai.models.user import User
+    from detect_ai.modules.identity.public import require_role
+    from detect_ai.modules.identity.infrastructure.models import User
 
     # Register temporary test routes on the app to test require_role
     @app.get("/api/test/admin-only")

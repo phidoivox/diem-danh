@@ -8,7 +8,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from detect_ai.shared.kernel.timeutil import now_vn, today_vn
-from detect_ai.models.academic import Class, Schedule
+from detect_ai.modules.academic.public import Class, Schedule
 
 
 def in_window(start: time | None, end: time | None, current: time) -> bool:

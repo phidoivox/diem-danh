@@ -21,15 +21,15 @@ import pytest
 from fastapi import HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from detect_ai.api.routes_admin_settings import update_settings
-from detect_ai.core.security import get_password_hash
-from detect_ai.core.timeutil import VN_TZ, today_vn
-from detect_ai.models.academic import Class, ClassStudent, Schedule
-from detect_ai.models.attendance_v2 import Attendance, AttendanceStatus
-from detect_ai.models.system_setting import SystemSetting
-from detect_ai.models.user import Role, StudentProfile, User
-from detect_ai.services import report_service
-from detect_ai.services.report_service import calculate_class_exam_ban
+from detect_ai.modules.reporting.presentation.settings_routes import update_settings
+from detect_ai.shared.kernel.security import get_password_hash
+from detect_ai.shared.kernel.timeutil import VN_TZ, today_vn
+from detect_ai.modules.academic.infrastructure.models import Class, ClassStudent, Schedule
+from detect_ai.modules.attendance.infrastructure.models import Attendance, AttendanceStatus
+from detect_ai.shared.kernel.system_setting import SystemSetting
+from detect_ai.modules.identity.infrastructure.models import Role, StudentProfile, User
+from detect_ai.modules.reporting.application import build as report_service
+from detect_ai.modules.reporting.application.build import calculate_class_exam_ban
 from detect_ai.shared.kernel.settings import load_exam_ban_thresholds
 
 
@@ -287,6 +287,6 @@ async def test_gia_tri_rac_trong_db_van_fallback_an_toan(session_maker_fixture):
 
 
 def test_report_weight_matches_policy():
-    from detect_ai.services import report_service as rs
-    from detect_ai.domain.policies import exam_ban_policy as pol
+    from detect_ai.modules.reporting.application import build as rs
+    from detect_ai.modules.evaluation.domain import exam_ban as pol
     assert rs.HALF_ABSENT_WEIGHT == pol.HALF_ABSENT_WEIGHT == 0.5

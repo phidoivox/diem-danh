@@ -5,15 +5,28 @@ from typing import Any, Optional
 import numpy as np
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
-from ..ai.face_recognizer import FaceIndex
-from ..core.database import Session
-from ..models.user import User, StudentProfile
+from detect_ai.shared.kernel.database import Session
+from detect_ai.modules.identity.infrastructure.models import User, StudentProfile
 
-# Cache embedding + faiss index trong RAM: khong query DB moi connection.
+try:
+    from detect_ai.modules.recognition.infrastructure.bench.face_recognizer import FaceIndex
+except ImportError:  # faiss absent in test env
+    FaceIndex = None  # type: ignore[assignment,misc]
+
+# Cache embedding + index trong RAM: khong query DB moi connection.
 embs = np.zeros((0, 512), np.float32)
 meta: list[dict] = []
-index = FaceIndex()
+index = FaceIndex() if FaceIndex is not None else None
 
+
+def _rebuild_index() -> None:
+    global index
+    if FaceIndex is None:
+        index = None
+        return
+    if index is None:
+        index = FaceIndex()
+    index.rebuild(embs)
 
 def decode_embedding(raw: Any) -> Optional[np.ndarray]:
     """Decode raw embedding (JSON list float, bytes float32, or string) to (512,) float32."""
@@ -55,7 +68,6 @@ def decode_embedding(raw: Any) -> Optional[np.ndarray]:
     except Exception:
         return None
 
-
 async def _load_from_session(s: AsyncSession) -> None:
     global embs, meta
     stmt = (
@@ -92,11 +104,10 @@ async def _load_from_session(s: AsyncSession) -> None:
     else:
         embs = np.zeros((0, 512), np.float32)
     meta = valid_meta
-    index.rebuild(embs)
-
+    _rebuild_index()
 
 async def reload(session: Optional[AsyncSession] = None) -> None:
-    """Reload face embeddings and rebuild Faiss index safely."""
+    """Reload face embeddings and rebuild index safely."""
     if session is not None:
         await _load_from_session(session)
     else:

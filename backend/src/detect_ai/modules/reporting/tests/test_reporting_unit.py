@@ -16,8 +16,9 @@ from detect_ai.modules.reporting.application.build import (
 )
 from detect_ai.modules.reporting.presentation.routes import router as admin_reports_router
 from detect_ai.modules.reporting.presentation.portal_routes import router as student_portal_router
-from detect_ai.services import report_service
-from detect_ai.api import routes_admin_reports, routes_student_portal
+from detect_ai.modules.reporting.application import build as report_service
+from detect_ai.modules.reporting.presentation import routes as routes_admin_reports
+from detect_ai.modules.reporting.presentation import portal_routes as routes_student_portal
 
 
 def test_public_reexports():

@@ -42,7 +42,7 @@ def resolve_insightface_model(explicit: str = "") -> Path | None:
         p = Path(explicit)
         return p if p.exists() else None
     try:
-        from detect_ai.core import config as C
+        from detect_ai.shared.kernel import config as C
 
         if getattr(C, "SPOOF_MODEL", ""):
             p = Path(C.SPOOF_MODEL)
@@ -72,7 +72,7 @@ def resolve_minifas_model(explicit: str = "") -> Path | None:
         pass
     # Vị trí quy ước: backend/data/weights/minifas_v2.onnx (tự tải, optional)
     try:
-        from detect_ai.core import config as C
+        from detect_ai.shared.kernel import config as C
 
         base = Path(getattr(C, "DATA_DIR", "data"))
         for cand in (base / "weights" / "minifas_v2.onnx",
@@ -96,7 +96,7 @@ def _get_insightface_liveness():
             try:
                 from ._providers import available_providers as _avail
             except ImportError:
-                from detect_ai.recognition._providers import available_providers as _avail
+                from ._providers import available_providers as _avail
 
             avail = set(_avail())
             order = ["CUDAExecutionProvider", "DmlExecutionProvider", "CoreMLExecutionProvider",

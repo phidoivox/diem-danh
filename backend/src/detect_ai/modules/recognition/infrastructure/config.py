@@ -86,7 +86,7 @@ def get_config(force: bool = False) -> RecognitionConfig:
     if _cached is not None and not force:
         return _cached
     try:
-        from detect_ai.core import config as C  # fallback giá trị cũ
+        from detect_ai.shared.kernel import config as C  # fallback giá trị cũ
 
         def pick(new: str, old_val, cast=float):
             raw = _env(f"RECOGNITION_{new}")
@@ -141,7 +141,7 @@ def auto_tune(cfg: RecognitionConfig | None = None) -> RecognitionConfig:
         try:
             from ._providers import detect_runtime
         except ImportError:
-            from detect_ai.recognition._providers import detect_runtime
+            from ._providers import detect_runtime
 
         rt = detect_runtime(explicit_provider=cfg.uniform_provider)
         if rt.has_gpu:

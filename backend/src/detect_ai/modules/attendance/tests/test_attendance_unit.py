@@ -21,11 +21,11 @@ def test_models_exist():
 
 
 def test_shims_completeness():
-    from detect_ai.models.attendance_v2 import (
+    from detect_ai.modules.attendance.infrastructure.models import (
         Attendance as ShimAttendance,
         AttendanceStatus as ShimAttendanceStatus,
     )
-    from detect_ai.api.routes_teacher import (
+    from detect_ai.modules.attendance.presentation.teacher_routes import (
         router as shim_router,
         _current_session as shim_current_session,
     )

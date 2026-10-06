@@ -59,28 +59,63 @@ def face_is_live(f) -> bool:
 
 
 class FaceIndex:
-    """faiss IndexFlatIP cho cosine similarity. Build 1 lan, search O(log n)."""
+    """faiss IndexFlatIP cho cosine similarity. Build 1 lan, search O(log n).
+
+    Fallback numpy brute-force khi faiss absent (env test/dev nhẹ):
+    cùng semantics (top-1 inner-product trên vector đã chuẩn hóa + ngưỡng).
+    """
 
     def __init__(self, dim: int = 512):
-        import faiss
-        self.index = faiss.IndexFlatIP(dim)
         self.dim = dim
+        try:
+            import faiss
+
+            self.index = faiss.IndexFlatIP(dim)
+            self._faiss = True
+        except ImportError:
+            self._db = np.zeros((0, dim), np.float32)
+            self._faiss = False
 
     def rebuild(self, embs: np.ndarray):
-        import faiss
-        self.index = faiss.IndexFlatIP(self.dim)
-        if len(embs):
-            norms = np.linalg.norm(embs, axis=1, keepdims=True) + 1e-9
-            normed = (embs / norms).astype(np.float32)
-            self.index.add(np.ascontiguousarray(normed))
+        if self._faiss:
+            import faiss
+
+            self.index = faiss.IndexFlatIP(self.dim)
+            if len(embs):
+                norms = np.linalg.norm(embs, axis=1, keepdims=True) + 1e-9
+                normed = (embs / norms).astype(np.float32)
+                self.index.add(np.ascontiguousarray(normed))
+            return
+        arr = np.asarray(embs, dtype=np.float32).reshape(-1, self.dim)
+        if len(arr):
+            norms = np.linalg.norm(arr, axis=1, keepdims=True) + 1e-9
+            arr = (arr / norms).astype(np.float32)
+        self._db = np.ascontiguousarray(arr)
+
+    @property
+    def ntotal(self) -> int:
+        if self._faiss:
+            return self.index.ntotal
+        return len(self._db)
 
     def match(self, q: np.ndarray, thr: float) -> tuple[int, float]:
-        if self.index.ntotal == 0:
+        if self._faiss:
+            if self.index.ntotal == 0:
+                return -1, 0.0
+            q = np.asarray(q, dtype=np.float32).flatten()
+            norm = np.linalg.norm(q)
+            if norm > 1e-9:
+                q = q / norm
+            d, idx = self.index.search(q.reshape(1, -1).astype(np.float32), 1)
+            sim = float(d[0][0])
+            return (int(idx[0][0]), sim) if sim >= thr else (-1, 0.0)
+        if len(self._db) == 0:
             return -1, 0.0
         q = np.asarray(q, dtype=np.float32).flatten()
         norm = np.linalg.norm(q)
         if norm > 1e-9:
             q = q / norm
-        d, idx = self.index.search(q.reshape(1, -1).astype(np.float32), 1)
-        sim = float(d[0][0])
-        return (int(idx[0][0]), sim) if sim >= thr else (-1, 0.0)
+        sims = self._db @ q
+        j = int(np.argmax(sims))
+        sim = float(sims[j])
+        return (j, sim) if sim >= thr else (-1, 0.0)

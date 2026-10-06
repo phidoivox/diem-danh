@@ -22,11 +22,16 @@ from sqlalchemy.ext.asyncio import (
     create_async_engine,
 )
 
-from detect_ai.core.database import Base
-from detect_ai.core.deps import get_db
+from detect_ai.shared.kernel.database import Base
+from detect_ai.shared.kernel.deps import get_db
 from detect_ai.main import app
 
-import detect_ai.models  # noqa: F401  (đăng ký metadata trước create_all)
+import detect_ai.modules.identity.infrastructure.models  # noqa: F401
+import detect_ai.modules.academic.infrastructure.models  # noqa: F401
+import detect_ai.modules.attendance.infrastructure.models  # noqa: F401
+import detect_ai.modules.leave.infrastructure.models  # noqa: F401
+import detect_ai.modules.evaluation.infrastructure.models  # noqa: F401
+import detect_ai.modules.recognition.infrastructure.models  # noqa: F401
 
 
 @pytest_asyncio.fixture
@@ -77,8 +82,8 @@ def _clear_recognition_caches() -> None:
     # test sau (VD gallery_size 30 thay vì 1). Xóa để mỗi client HTTP thấy
     # đúng dữ liệu fixture của chính nó.
     try:
-        from detect_ai.recognition import gallery as _gal_mod
-        from detect_ai.recognition import pipeline as _pipe_mod
+        from detect_ai.modules.recognition.infrastructure import gallery as _gal_mod
+        from detect_ai.modules.recognition.infrastructure import pipeline as _pipe_mod
 
         _gal_mod._cache.clear()
         _pipe_mod._sessions.clear()

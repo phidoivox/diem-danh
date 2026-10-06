@@ -15,14 +15,14 @@ mỗi schedule 1 KioskSession.
 
 import asyncio
 import time
-from detect_ai.api.deps_kiosk import adaptive_feedback
+from detect_ai.modules.attendance.presentation.deps import adaptive_feedback
 
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 from loguru import logger
 
 from detect_ai.shared.kernel.database import Session
-from detect_ai.core.security import decode_access_token
-from detect_ai.models.user import User
+from detect_ai.shared.kernel.security import decode_access_token
+from detect_ai.modules.identity.public import User
 from detect_ai.modules.attendance.application.checkin import record_checkin
 from detect_ai.modules.recognition import public
 from detect_ai.shared.kernel.settings import load_min_checkout_gap
@@ -85,7 +85,7 @@ async def kiosk_ws(ws: WebSocket):
 
     from fastapi import HTTPException as _HTTPException
 
-    from detect_ai.api.deps_kiosk import authorize_kiosk_schedule as _authorize
+    from detect_ai.modules.attendance.presentation.deps import authorize_kiosk_schedule as _authorize
 
     async with Session() as s:
         try:

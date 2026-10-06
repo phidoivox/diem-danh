@@ -25,7 +25,7 @@ DEFAULT_NAMES = ["person", "valid_shirt", "invalid_shirt"]
 def resolve_weights(explicit: str | None = None) -> tuple[Path, str]:
     """Ưu tiên: explicit > custom uniform .pt > .onnx > fallback .pt."""
     try:
-        from detect_ai.core import config as C
+        from detect_ai.shared.kernel import config as C
 
         if explicit:
             return Path(explicit), "explicit"
@@ -44,7 +44,7 @@ def _providers(explicit: str = "auto") -> list[str]:
     try:
         from ._providers import pick_providers
     except ImportError:
-        from detect_ai.recognition._providers import pick_providers
+        from ._providers import pick_providers
 
     chain, _ = pick_providers(explicit)
     return chain

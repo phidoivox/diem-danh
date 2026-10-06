@@ -10,10 +10,7 @@ from . import liveness as live_mod
 from .config import get_config
 from .uniform_engine import UniformEngine
 
-try:
-    from .face_engine import FaceEngine
-except ImportError:
-    from detect_ai.recognition.face_engine import FaceEngine
+from .face_engine import FaceEngine
 
 
 class FaceAdapter:

@@ -51,8 +51,8 @@ def test_kiosk_openapi_shape():
 
 
 def test_kiosk_shims_and_public():
-    from detect_ai.api.routes_kiosk import router as shim_kiosk
-    from detect_ai.api.routes_kiosk_ws import router as shim_kiosk_ws
+    from detect_ai.modules.attendance.presentation.kiosk_routes import router as shim_kiosk
+    from detect_ai.modules.attendance.presentation.kiosk_ws import router as shim_kiosk_ws
 
     assert shim_kiosk is kiosk_router
     assert shim_kiosk_ws is kiosk_ws_router

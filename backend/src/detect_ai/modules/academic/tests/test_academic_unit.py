@@ -30,12 +30,12 @@ async def test_public_get_class():
 
 
 def test_shims_completeness():
-    from detect_ai.models.academic import (
+    from detect_ai.modules.academic.infrastructure.models import (
         Class as ShimClass,
         ClassStudent as ShimClassStudent,
         Schedule as ShimSchedule,
     )
-    from detect_ai.api.routes_admin_academic import (
+    from detect_ai.modules.academic.presentation.routes import (
         ClassCreateRequest,
         ClassPage,
         ClassUpdateRequest,

@@ -3,18 +3,14 @@
 -- Architecture: Cách 2 (Tách biệt users và student_profiles / teacher_profiles)
 -- =====================================================================
 
--- 1. ENUMS
-DO $$ BEGIN
-    IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'attendance_status') THEN
-        CREATE TYPE attendance_status AS ENUM ('PRESENT', 'LATE', 'HALF_ABSENT', 'ABSENT', 'EXCUSED');
-    END IF;
-    IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'leave_status') THEN
-        CREATE TYPE leave_status AS ENUM ('PENDING', 'APPROVED', 'REJECTED');
-    END IF;
-    IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'user_role') THEN
-        CREATE TYPE user_role AS ENUM ('ADMIN', 'TEACHER', 'STUDENT');
-    END IF;
-END $$;
+-- 1. EXTENSIONS & TRẠNG THÁI (thay cho ENUM native)
+CREATE EXTENSION IF NOT EXISTS vector;
+-- KHÔNG dùng CREATE TYPE ... AS ENUM nữa. ORM khai native_enum=False + create_constraint=True,
+-- tức là VARCHAR(n) + CHECK. Nếu file này tạo ENUM native còn ORM tạo VARCHAR thì tuỳ đường
+-- tạo bảng mà ra hai schema vật lý khác nhau (đúng loại drift đã phải vá tay trước đây).
+-- Hai CHECK dưới đây phải khớp tên + giá trị với SQLAlchemy sinh ra:
+--   CONSTRAINT attendance_status CHECK (status IN ('PRESENT','LATE','HALF_ABSENT','ABSENT','EXCUSED'))
+--   CONSTRAINT leave_status      CHECK (status IN ('PENDING','APPROVED','REJECTED'))
 
 -- 2. TABLE: roles
 CREATE TABLE IF NOT EXISTS roles (
@@ -36,17 +32,27 @@ CREATE TABLE IF NOT EXISTS users (
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
--- 4. TABLE: student_profiles (1-1 with users for students)
+-- 4. TABLE: administrative_classes (Lớp sinh hoạt / Lớp niên chế)
+CREATE TABLE IF NOT EXISTS administrative_classes (
+    id SERIAL PRIMARY KEY,
+    class_code VARCHAR(50) UNIQUE NOT NULL,
+    academic_year VARCHAR(50) NOT NULL DEFAULT '',
+    faculty VARCHAR(100) NOT NULL DEFAULT '',
+    homeroom_teacher_id INT NULL REFERENCES users(id) ON DELETE SET NULL,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+-- 5. TABLE: student_profiles (1-1 with users for students)
 CREATE TABLE IF NOT EXISTS student_profiles (
     id SERIAL PRIMARY KEY,
     user_id INT UNIQUE NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-    face_embedding TEXT NULL,
     total_point INT NOT NULL DEFAULT 100,
+    admin_class_id INT NULL REFERENCES administrative_classes(id) ON DELETE SET NULL,
     class_name VARCHAR(100) NOT NULL DEFAULT '',
     major VARCHAR(100) NOT NULL DEFAULT ''
 );
 
--- 5. TABLE: teacher_profiles (1-1 with users for teachers)
+-- 6. TABLE: teacher_profiles (1-1 with users for teachers)
 CREATE TABLE IF NOT EXISTS teacher_profiles (
     id SERIAL PRIMARY KEY,
     user_id INT UNIQUE NOT NULL REFERENCES users(id) ON DELETE CASCADE,
@@ -55,11 +61,23 @@ CREATE TABLE IF NOT EXISTS teacher_profiles (
     office_room VARCHAR(50) NOT NULL DEFAULT ''
 );
 
--- 6. TABLE: classes (Lớp học phần)
+-- 7. TABLE: courses (Học phần / Môn học)
+CREATE TABLE IF NOT EXISTS courses (
+    id SERIAL PRIMARY KEY,
+    course_code VARCHAR(50) UNIQUE NOT NULL,
+    course_name VARCHAR(255) NOT NULL,
+    credits INT NOT NULL DEFAULT 3,
+    default_sessions INT NOT NULL DEFAULT 15,
+    description TEXT NULL,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+-- 8. TABLE: classes (Lớp học phần)
 CREATE TABLE IF NOT EXISTS classes (
     id SERIAL PRIMARY KEY,
     class_code VARCHAR(50) UNIQUE NOT NULL,
-    course_name VARCHAR(100) NOT NULL,
+    course_id INT NOT NULL REFERENCES courses(id) ON DELETE RESTRICT,
+    course_name VARCHAR(100) NOT NULL DEFAULT '',
     teacher_id INT NOT NULL REFERENCES users(id) ON DELETE RESTRICT,
     semester VARCHAR(20) NOT NULL,
     total_sessions INT NOT NULL DEFAULT 15
@@ -92,13 +110,14 @@ CREATE TABLE IF NOT EXISTS attendance (
     check_in_time TIMESTAMPTZ NULL,
     check_out_time TIMESTAMPTZ NULL,
     has_uniform BOOLEAN NOT NULL DEFAULT TRUE,
-    status attendance_status NOT NULL DEFAULT 'ABSENT',
+    status VARCHAR(11) NOT NULL DEFAULT 'ABSENT',
     is_manual_override BOOLEAN NOT NULL DEFAULT FALSE,
     is_evaluated BOOLEAN NOT NULL DEFAULT FALSE,
     evaluated_at TIMESTAMPTZ NULL,
     note VARCHAR(255) NULL,
     updated_by INT NULL REFERENCES users(id) ON DELETE SET NULL,
-    CONSTRAINT uq_attendance_schedule_student UNIQUE (schedule_id, student_id)
+    CONSTRAINT uq_attendance_schedule_student UNIQUE (schedule_id, student_id),
+    CONSTRAINT attendance_status CHECK (status IN ('PRESENT', 'LATE', 'HALF_ABSENT', 'ABSENT', 'EXCUSED'))
 );
 
 -- 10. TABLE: leave_requests (Đơn xin nghỉ phép trực tuyến)
@@ -108,11 +127,12 @@ CREATE TABLE IF NOT EXISTS leave_requests (
     student_id INT NOT NULL REFERENCES users(id) ON DELETE RESTRICT,
     reason TEXT NOT NULL,
     proof_image VARCHAR(500) NULL,
-    status leave_status NOT NULL DEFAULT 'PENDING',
+    status VARCHAR(8) NOT NULL DEFAULT 'PENDING',
     teacher_feedback VARCHAR(255) NULL,
     reviewed_by INT NULL REFERENCES users(id) ON DELETE SET NULL,
     reviewed_at TIMESTAMPTZ NULL,
-    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    CONSTRAINT leave_status CHECK (status IN ('PENDING', 'APPROVED', 'REJECTED'))
 );
 
 -- 11. TABLE: point_ledger (Sổ cái biến động điểm chuyên cần)
@@ -148,5 +168,10 @@ CREATE INDEX IF NOT EXISTS idx_attendance_schedule_student ON attendance (schedu
 CREATE INDEX IF NOT EXISTS idx_attendance_evaluated ON attendance (is_evaluated, schedule_id);
 CREATE INDEX IF NOT EXISTS idx_leave_requests_student_id ON leave_requests (student_id);
 CREATE INDEX IF NOT EXISTS idx_leave_requests_schedule_id ON leave_requests (schedule_id);
+-- Chống nộp trùng đơn nghỉ phép khi có request đồng thời (pre-check ở API có khe hở TOCTOU).
+-- Chỉ áp cho đơn còn hiệu lực; đơn REJECTED được phép nộp lại.
+CREATE UNIQUE INDEX IF NOT EXISTS uq_leave_requests_active
+    ON leave_requests (schedule_id, student_id)
+    WHERE status IN ('PENDING', 'APPROVED');
 CREATE INDEX IF NOT EXISTS idx_point_ledger_student ON point_ledger (student_id);
 CREATE INDEX IF NOT EXISTS idx_point_ledger_schedule ON point_ledger (schedule_id);

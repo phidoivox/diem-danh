@@ -8,9 +8,9 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
-from detect_ai.application.adapters.storage_adapter import upload_leave_proof_bytes
-from detect_ai.models.academic import Class, ClassStudent, Schedule
-from detect_ai.models.user import User
+from detect_ai.shared.kernel.storage_service import upload_leave_proof_bytes
+from detect_ai.modules.academic.public import Class, ClassStudent, Schedule
+from detect_ai.modules.identity.public import User
 from detect_ai.modules.identity.public import require_student, require_teacher
 from detect_ai.shared.kernel.deps import get_db
 from ..application.review import review_leave as review_leave_use_case

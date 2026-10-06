@@ -17,8 +17,8 @@ from sqlalchemy.orm import Mapped, mapped_column, relationship
 from detect_ai.shared.kernel.database import Base
 
 if TYPE_CHECKING:
-    from detect_ai.models.user import User
-    from detect_ai.models.academic import Schedule
+    from detect_ai.modules.identity.public import User
+    from detect_ai.modules.academic.public import Schedule
 
 
 class AttendanceStatus(str, enum.Enum):

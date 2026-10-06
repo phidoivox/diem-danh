@@ -4,14 +4,14 @@ import pytest_asyncio
 from httpx import ASGITransport, AsyncClient
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
-from detect_ai.core.database import Base
-from detect_ai.core.deps import get_db
-from detect_ai.core.security import create_access_token, get_password_hash
+from detect_ai.shared.kernel.database import Base
+from detect_ai.shared.kernel.deps import get_db
+from detect_ai.shared.kernel.security import create_access_token, get_password_hash
 from detect_ai.main import app
-from detect_ai.models.academic import Class, ClassStudent, Schedule
-from detect_ai.models.attendance_v2 import Attendance, AttendanceStatus
-from detect_ai.models.point_ledger import PointLedger
-from detect_ai.models.user import Role, StudentProfile, TeacherProfile, User
+from detect_ai.modules.academic.infrastructure.models import Class, ClassStudent, Schedule
+from detect_ai.modules.attendance.infrastructure.models import Attendance, AttendanceStatus
+from detect_ai.modules.evaluation.infrastructure.models import PointLedger
+from detect_ai.modules.identity.infrastructure.models import Role, StudentProfile, TeacherProfile, User
 
 
 @pytest_asyncio.fixture

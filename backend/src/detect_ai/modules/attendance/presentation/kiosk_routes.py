@@ -23,13 +23,14 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from detect_ai.shared.kernel.deps import get_db
-from detect_ai.core.supabase import STORAGE_DIR, SupabaseStorageHelper
-from detect_ai.models.academic import Class, ClassStudent, Schedule
-from detect_ai.models.user import User
+from detect_ai.shared.kernel.supabase import STORAGE_DIR, SupabaseStorageHelper
+from detect_ai.modules.academic.public import Class, ClassStudent, Schedule
+from detect_ai.modules.identity.public import User
 from detect_ai.modules.recognition import public
 from detect_ai.shared.kernel.settings import load_min_checkout_gap
-from detect_ai.api.deps_auth import require_admin, require_teacher
-from detect_ai.api.deps_kiosk import adaptive_feedback, authorize_kiosk_schedule
+from detect_ai.modules.identity.public import require_admin, require_teacher, verify_kiosk_api_key
+from detect_ai.modules.attendance.presentation.deps import adaptive_feedback, authorize_kiosk_schedule
+from detect_ai.modules.attendance.public import Attendance, AttendanceStatus
 from ..application.checkin import record_checkin
 
 router = APIRouter(prefix="/api/v1/kiosk", tags=["kiosk"])
@@ -196,8 +197,16 @@ async def enroll_face(
         img = public.decode_strict(content)
     except public.ImageDecodeError as e:
         raise HTTPException(422, str(e))
+    async def _bump_gallery(uid: int) -> None:
+        # Query academic nằm ở caller, không ở recognition infra.
+        cids = (await db.execute(select(ClassStudent.class_id).where(
+            ClassStudent.student_id == uid))).scalars().all()
+        for cid in cids:
+            public.bump_version(int(cid))
+            await public.bump_db_version(db, int(cid))
     try:
-        row = await public.enroll_image(db, user_id, img, source="kiosk")
+        row = await public.enroll_image(db, user_id, img, source="kiosk",
+                                        on_enrolled=_bump_gallery)
     except public.EnrollError as e:
         raise HTTPException(422, str(e))
     return {"ok": True, "user_id": user_id, "embedding_id": row.id,
@@ -237,15 +246,6 @@ async def backfill_class(
         fp = avatar_dir / f"{u.user_code}.jpg"
         if fp.exists():
             img_bytes = fp.read_bytes()
-        elif u.avatar_url:
-            try:
-                from detect_ai.core.supabase import supabase_storage
-                if supabase_storage.is_cloud_enabled:
-                    res = await supabase_storage.client.from_(SupabaseStorageHelper.BUCKET_AVATARS).download(f"{u.user_code}.jpg")
-                    if res:
-                        img_bytes = res
-            except Exception:
-                pass
         if not img_bytes:
             failed.append({"user_code": u.user_code, "reason": "chưa có avatar"})
             continue
@@ -270,3 +270,108 @@ async def reset_session(
     await _get_schedule_for_teacher(db, schedule_id, current_user.id)
     public.reset_session(schedule_id)
     return {"ok": True, "schedule_id": schedule_id}
+
+
+class ManualScanDTO(BaseModel):
+    room_name: str
+    student_code: str
+    has_uniform: bool = True
+    timestamp: str
+
+
+# Kiosk quét thủ công (không camera/AI): client gửi JSON thay vì frame JPEG.
+# Dùng cho máy quét thẻ/QR, vận hành thử, và E2E. Lần quét đầu của
+# (schedule, student) = CHECK_IN, lần sau = CHECK_OUT (ghi giờ + đồng phục).
+manual_router = APIRouter(prefix="/api/v1/attendance", tags=["attendance"])
+
+
+@manual_router.post("/kiosk-record")
+async def kiosk_record(
+    body: ManualScanDTO,
+    _key: str = Depends(verify_kiosk_api_key),
+    db: AsyncSession = Depends(get_db),
+):
+    from datetime import datetime, timedelta
+
+    from detect_ai.shared.kernel.settings import as_int, load_settings_map
+
+    try:
+        moment = datetime.fromisoformat(body.timestamp)
+    except ValueError:
+        raise HTTPException(422, "timestamp phải là ISO datetime")
+    sched = (
+        await db.execute(
+            select(Schedule)
+            .where(Schedule.room_name == body.room_name, Schedule.study_date == moment.date())
+            .order_by(Schedule.start_time)
+        )
+    ).scalars().first()
+    if not sched:
+        raise HTTPException(404, "Không tìm thấy buổi học ở phòng/ngày này")
+    naive = moment.replace(tzinfo=None)
+    # Buffer ±30p quanh buổi học: tới sớm/về muộn trong buffer vẫn quét được,
+    # ngoài buffer = 404 (kiosk đóng).
+    start_dt = datetime.combine(sched.study_date, sched.start_time)
+    end_dt = datetime.combine(sched.study_date, sched.end_time)
+    buf = timedelta(minutes=30)
+    if not (start_dt - buf <= naive <= end_dt + buf):
+        raise HTTPException(404, "Ngoài giờ học - điểm danh đang đóng")
+    student = (
+        await db.execute(
+            select(User).where(
+                User.user_code == body.student_code,
+                User.is_active == True,  # noqa: E712
+                User.deleted_at.is_(None),
+            )
+        )
+    ).scalar_one_or_none()
+    if not student:
+        raise HTTPException(404, "Không tìm thấy sinh viên")
+    enrolled = (
+        await db.execute(
+            select(ClassStudent).where(
+                ClassStudent.class_id == sched.class_id, ClassStudent.student_id == student.id
+            )
+        )
+    ).scalar_one_or_none()
+    if not enrolled:
+        raise HTTPException(400, "Sinh viên không có trong danh sách lớp học phần này")
+    settings = await load_settings_map(db)
+    late_tol = as_int(settings, "LATE_TOLERANCE_MINUTES", 15)
+    clazz = await db.get(Class, sched.class_id)
+
+    def _payload(kind: str, att: Attendance) -> dict:
+        return {
+            "type": kind,
+            "status": att.status.value,
+            "has_uniform": att.has_uniform,
+            "student_code": body.student_code,
+            "room_name": body.room_name,
+            "class_code": clazz.class_code if clazz else None,
+            "check_in_time": att.check_in_time.isoformat() if att.check_in_time else None,
+            "check_out_time": att.check_out_time.isoformat() if att.check_out_time else None,
+        }
+
+    att = (
+        await db.execute(
+            select(Attendance).where(
+                Attendance.schedule_id == sched.id, Attendance.student_id == student.id
+            )
+        )
+    ).scalar_one_or_none()
+    if att is None:
+        status = AttendanceStatus.LATE if naive > start_dt + timedelta(minutes=late_tol) else AttendanceStatus.PRESENT
+        att = Attendance(
+            schedule_id=sched.id,
+            student_id=student.id,
+            check_in_time=naive,
+            has_uniform=body.has_uniform,
+            status=status,
+        )
+        db.add(att)
+        await db.commit()
+        return _payload("CHECK_IN", att)
+    att.check_out_time = naive
+    att.has_uniform = body.has_uniform
+    await db.commit()
+    return _payload("CHECK_OUT", att)

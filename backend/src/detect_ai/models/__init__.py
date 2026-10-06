@@ -1,18 +1,12 @@
-from .student import Student
-from .attendance import AttendanceRecord
-from .uniform_rule import UniformRule
-
-from .user import Role, User, StudentProfile, TeacherProfile
-from .academic import Class, ClassStudent, Schedule
-from .attendance_v2 import Attendance, AttendanceStatus
-from .leave_request import LeaveRequest, LeaveStatus
-from .point_ledger import PointLedger
-from .system_setting import SystemSetting
+from detect_ai.modules.identity.infrastructure.models import Role, User, StudentProfile, TeacherProfile
+from detect_ai.modules.academic.infrastructure.models import Class, ClassStudent, Schedule
+from detect_ai.modules.attendance.infrastructure.models import Attendance, AttendanceStatus
+from detect_ai.modules.recognition.infrastructure.models import FaceEmbedding, FaceEvent
+from detect_ai.modules.leave.infrastructure.models import LeaveRequest, LeaveStatus
+from detect_ai.modules.evaluation.infrastructure.models import PointLedger
+from detect_ai.shared.kernel.system_setting import SystemSetting
 
 __all__ = [
-    "Student",
-    "AttendanceRecord",
-    "UniformRule",
     "Role",
     "User",
     "StudentProfile",
@@ -22,6 +16,8 @@ __all__ = [
     "Schedule",
     "Attendance",
     "AttendanceStatus",
+    "FaceEmbedding",
+    "FaceEvent",
     "LeaveRequest",
     "LeaveStatus",
     "PointLedger",

@@ -10,11 +10,7 @@ from sqlalchemy import select
 
 from .models import FaceEmbedding
 from . import liveness as live_mod
-try:
-    from .face_engine import FaceEngine, embedding_to_json, quality
-except ImportError:
-    from detect_ai.recognition.face_engine import FaceEngine, embedding_to_json, quality
-from .gallery import bump_version
+from .face_engine import FaceEngine, embedding_to_json, quality
 
 MAX_ACTIVE_PER_USER = 5
 MIN_ENROLL_QUALITY = 0.40
@@ -42,7 +38,7 @@ def extract_best(img_bgr, engine: FaceEngine | None = None):
 
 
 async def enroll_image(db, user_id: int, img_bgr, source: str = "avatar",
-                       engine: FaceEngine | None = None) -> FaceEmbedding:
+                       engine: FaceEngine | None = None, on_enrolled=None) -> FaceEmbedding:
     face, q, _live = extract_best(img_bgr, engine)
     stmt = (
         select(FaceEmbedding)
@@ -57,20 +53,15 @@ async def enroll_image(db, user_id: int, img_bgr, source: str = "avatar",
     db.add(row)
     await db.commit()
     await db.refresh(row)
-    # Gallery cache key theo class -> bump mọi lớp chứa SV để kiosk thấy ngay.
-    # Vector chỉ ghi 1 cột embedding JSON (tìm pgvector qua expression index).
-    try:
-        from detect_ai.models.academic import ClassStudent
-        from .gallery import _is_postgres, bump_db_version, bump_version
-
-        cids = (await db.execute(select(ClassStudent.class_id).where(
-            ClassStudent.student_id == user_id))).scalars().all()
-        for cid in cids:
-            bump_version(int(cid))  # RAM cục bộ thấy ngay
-            if _is_postgres(db):
-                await bump_db_version(db, int(cid))  # worker khác thấy ngay
-    except Exception:  # noqa: BLE001
-        pass
+    # Gallery cache key theo class -> caller bump qua on_enrolled để kiosk
+    # thấy ngay. recognition không query academic trực tiếp (tránh cycle).
+    if on_enrolled is not None:
+        try:
+            maybe = on_enrolled(user_id)
+            if hasattr(maybe, "__await__"):
+                await maybe
+        except Exception:  # noqa: BLE001
+            pass
     return row
 
 

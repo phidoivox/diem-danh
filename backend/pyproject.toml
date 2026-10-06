@@ -31,7 +31,6 @@ dependencies = [
     "pyjwt>=2.8",
     "apscheduler>=3.10.4",
     "openpyxl>=3.1.2",
-    "storage3>=2.31.0",
 ]
 
 [project.optional-dependencies]

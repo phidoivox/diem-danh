@@ -14,10 +14,10 @@ from sqlalchemy.orm import Mapped, mapped_column, relationship
 from detect_ai.shared.kernel.database import Base
 
 if TYPE_CHECKING:
-    from detect_ai.models.academic import Class
-    from detect_ai.models.attendance_v2 import Attendance
-    from detect_ai.models.leave_request import LeaveRequest
-    from detect_ai.models.point_ledger import PointLedger
+    from detect_ai.modules.academic.public import Class
+    from detect_ai.modules.attendance.public import Attendance
+    from detect_ai.modules.leave.public import LeaveRequest
+    from detect_ai.modules.evaluation.public import PointLedger
 
 
 class Role(Base):

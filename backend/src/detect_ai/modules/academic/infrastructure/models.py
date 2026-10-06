@@ -16,10 +16,25 @@ from sqlalchemy.orm import Mapped, mapped_column, relationship
 from detect_ai.shared.kernel.database import Base
 
 if TYPE_CHECKING:
-    from detect_ai.models.user import User
-    from detect_ai.models.attendance_v2 import Attendance
-    from detect_ai.models.leave_request import LeaveRequest
-    from detect_ai.models.point_ledger import PointLedger
+    from detect_ai.modules.identity.public import User
+    from detect_ai.modules.attendance.public import Attendance
+    from detect_ai.modules.leave.public import LeaveRequest
+    from detect_ai.modules.evaluation.public import PointLedger
+
+
+class Course(Base):
+    __tablename__ = "courses"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    course_code: Mapped[str] = mapped_column(String(50), unique=True, nullable=False, index=True)
+    course_name: Mapped[str] = mapped_column(String(255), nullable=False)
+    credits: Mapped[int] = mapped_column(Integer, default=3, nullable=False)
+    default_sessions: Mapped[int] = mapped_column(Integer, default=15, nullable=False)
+
+    classes: Mapped[List[Class]] = relationship(
+        "Class",
+        back_populates="course",
+    )
 
 
 class Class(Base):
@@ -27,12 +42,25 @@ class Class(Base):
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     class_code: Mapped[str] = mapped_column(String(50), unique=True, nullable=False, index=True)
+    course_id: Mapped[int | None] = mapped_column(
+        Integer, ForeignKey("courses.id", ondelete="RESTRICT"), nullable=True, index=True
+    )
+    # ponytail: schema SQL (01_schema.sql) giữ NOT NULL + backfill; model nullable để
+    # fixtures/tests cũ (17 chỗ tạo Class không có course) chạy được. Production reads
+    # không ảnh hưởng. Khi fixtures được cập nhật hết, siết lại nullable=False.
     course_name: Mapped[str] = mapped_column(String(100), nullable=False)
     teacher_id: Mapped[int] = mapped_column(
         Integer, ForeignKey("users.id", ondelete="RESTRICT"), nullable=False, index=True
     )
     semester: Mapped[str] = mapped_column(String(20), nullable=False)
     total_sessions: Mapped[int] = mapped_column(Integer, default=15, nullable=False)
+
+    course: Mapped[Course] = relationship(
+        "Course",
+        back_populates="classes",
+        foreign_keys=[course_id],
+        lazy="selectin",
+    )
 
     teacher: Mapped[User] = relationship(
         "User",

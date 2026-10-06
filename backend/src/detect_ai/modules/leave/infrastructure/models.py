@@ -11,15 +11,17 @@ from sqlalchemy import (
     String,
     Text,
     func,
+    select,
 )
+from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from detect_ai.shared.kernel.database import Base
 from ..domain.request import LeaveStatus
 
 if TYPE_CHECKING:
-    from detect_ai.models.user import User
-    from detect_ai.models.academic import Schedule
+    from detect_ai.modules.identity.public import User
+    from detect_ai.modules.academic.public import Schedule
 
 
 class LeaveRequest(Base):
@@ -72,4 +74,60 @@ class LeaveRequest(Base):
     )
 
 
-__all__ = ["LeaveRequest", "LeaveStatus"]
+__all__ = [
+    "LeaveRequest",
+    "LeaveStatus",
+    "find_attendance",
+    "find_refund_entry",
+    "find_student_profile",
+    "list_deduct_ledger_entries",
+]
+
+
+async def find_attendance(
+    session: AsyncSession, schedule_id: int, student_id: int
+):
+    """Repo cho review: bản ghi điểm danh của (schedule, student), giữ nguyên logic."""
+    from detect_ai.modules.attendance.public import Attendance
+
+    stmt = select(Attendance).where(
+        Attendance.schedule_id == schedule_id,
+        Attendance.student_id == student_id,
+    )
+    return (await session.execute(stmt)).scalar_one_or_none()
+
+
+async def list_deduct_ledger_entries(
+    session: AsyncSession, student_id: int, schedule_id: int
+) -> list:
+    """Repo cho review: các dòng ledger trừ điểm (giữ nguyên point_delta < 0)."""
+    from detect_ai.modules.evaluation.public import PointLedger
+
+    stmt = select(PointLedger).where(
+        PointLedger.student_id == student_id,
+        PointLedger.schedule_id == schedule_id,
+        PointLedger.point_delta < 0,
+    )
+    return (await session.execute(stmt)).scalars().all()
+
+
+async def find_refund_entry(
+    session: AsyncSession, student_id: int, schedule_id: int
+):
+    """Repo cho review: dòng LEAVE_REFUND đã có (chống hoàn điểm 2 lần)."""
+    from detect_ai.modules.evaluation.public import PointLedger
+
+    stmt = select(PointLedger).where(
+        PointLedger.student_id == student_id,
+        PointLedger.schedule_id == schedule_id,
+        PointLedger.reason_code == "LEAVE_REFUND",
+    )
+    return (await session.execute(stmt)).scalar_one_or_none()
+
+
+async def find_student_profile(session: AsyncSession, student_id: int):
+    """Repo cho review: StudentProfile theo user_id."""
+    from detect_ai.modules.identity.public import StudentProfile
+
+    stmt = select(StudentProfile).where(StudentProfile.user_id == student_id)
+    return (await session.execute(stmt)).scalar_one_or_none()

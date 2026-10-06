@@ -3,21 +3,23 @@ from __future__ import annotations
 from datetime import date, datetime, timezone
 from typing import Any, Dict, List, Optional, Set
 from loguru import logger
-from sqlalchemy import select
-from sqlalchemy.ext.asyncio import AsyncSession
 
 from detect_ai.shared.kernel.timeutil import today_vn
-from detect_ai.models.academic import ClassStudent, Schedule
-from detect_ai.models.attendance_v2 import Attendance, AttendanceStatus
-from detect_ai.models.leave_request import LeaveRequest, LeaveStatus
-from ..infrastructure.models import PointLedger
-from detect_ai.models.user import StudentProfile
+from detect_ai.modules.attendance.public import Attendance, AttendanceStatus
+from ..infrastructure.models import (
+    PointLedger,
+    list_approved_leave_student_ids,
+    list_attendances_by_schedule,
+    list_enrolled_student_ids,
+    list_profiles_by_user_ids,
+    list_schedules_by_date,
+)
 from ..domain.policy import decide_attendance
 from detect_ai.shared.kernel.settings import as_bool, as_int, load_settings_map
 
 
 async def run_nightly_evaluation(
-    session: AsyncSession,
+    session: Any,
     target_date: Optional[date] = None,
 ) -> Dict[str, Any]:
     """Execute nightly evaluation of student attendance for the target date.
@@ -51,12 +53,7 @@ async def run_nightly_evaluation(
     }
 
     # 2. Query schedules for target_date
-    stmt_schedules = (
-        select(Schedule)
-        .where(Schedule.study_date == target_date)
-        .order_by(Schedule.id)
-    )
-    schedules = (await session.execute(stmt_schedules)).scalars().all()
+    schedules = await list_schedules_by_date(session, target_date)
 
     count_records = 0
     evaluated_student_ids: Set[int] = set()
@@ -64,14 +61,10 @@ async def run_nightly_evaluation(
 
     for sched in schedules:
         # A. Find all enrolled students in the schedule's class
-        stmt_enrolled = select(ClassStudent.student_id).where(
-            ClassStudent.class_id == sched.class_id
-        )
-        enrolled_student_ids = (await session.execute(stmt_enrolled)).scalars().all()
+        enrolled_student_ids = await list_enrolled_student_ids(session, sched.class_id)
 
         # B. Find existing attendances for this schedule
-        stmt_existing = select(Attendance).where(Attendance.schedule_id == sched.id)
-        existing_attendances = (await session.execute(stmt_existing)).scalars().all()
+        existing_attendances = await list_attendances_by_schedule(session, sched.id)
         att_by_student = {att.student_id: att for att in existing_attendances}
 
         # C. Auto-create ABSENT attendance for students without any record
@@ -103,21 +96,9 @@ async def run_nightly_evaluation(
         # Bulk fetch: 1 query profiles + 1 query approved-leaves cho cả buổi
         # (thay N+1 query trong loop từng sinh viên).
         uneval_ids = [att.student_id for att in unevaluated_attendances]
-        profiles = (
-            (await session.execute(
-                select(StudentProfile).where(StudentProfile.user_id.in_(uneval_ids))
-            )).scalars().all()
-        )
+        profiles = await list_profiles_by_user_ids(session, uneval_ids)
         profile_by_student = {p.user_id: p for p in profiles}
-        approved_ids = set(
-            (await session.execute(
-                select(LeaveRequest.student_id).where(
-                    LeaveRequest.schedule_id == sched.id,
-                    LeaveRequest.student_id.in_(uneval_ids),
-                    LeaveRequest.status == LeaveStatus.APPROVED,
-                )
-            )).scalars().all()
-        )
+        approved_ids = await list_approved_leave_student_ids(session, sched.id, uneval_ids)
 
         # Bảng điểm build 1 lần/buổi (giữ nguyên nội dung): trong loop chỉ đọc.
         points = dict(POINT_MAP)

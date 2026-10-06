@@ -11,11 +11,11 @@ from sqlalchemy.orm import selectinload
 from detect_ai.shared.kernel.deps import get_db
 from detect_ai.shared.kernel.timeutil import VN_TZ as _VN_TZ
 from detect_ai.shared.kernel.timeutil import today_vn as _today_vn
-from detect_ai.models.academic import Class, ClassStudent, Schedule
+from detect_ai.modules.academic.public import Class, ClassStudent, Schedule
 from ..infrastructure.models import Attendance, AttendanceStatus
-from detect_ai.models.point_ledger import PointLedger
-from detect_ai.models.user import User
-from detect_ai.services.report_service import (
+from detect_ai.modules.evaluation.public import PointLedger
+from detect_ai.modules.identity.public import User
+from detect_ai.modules.reporting.public import (
     calculate_class_exam_ban,
     generate_excel_exam_ban,
 )

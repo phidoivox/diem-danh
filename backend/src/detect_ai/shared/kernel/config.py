@@ -18,6 +18,7 @@ class Settings(BaseSettings):
     jwt_secret: str = "smart-classroom-super-secret-jwt-key-2026"
     jwt_algorithm: str = "HS256"
     jwt_access_token_expire_minutes: int = 60 * 24
+    kiosk_api_key: str = "kiosk-secret-key-2026"
 
     @property
     def jwt_expire_minutes(self) -> int:

@@ -37,7 +37,14 @@ class Base(DeclarativeBase):
 
 
 async def init_db() -> None:
-    from .. import models  # noqa: F401
+    # Qua public (đăng ký Base.metadata qua re-export models, không import sâu infra).
+    from detect_ai.modules.academic import public as _academic_public  # noqa: F401
+    from detect_ai.modules.attendance import public as _attendance_public  # noqa: F401
+    from detect_ai.modules.evaluation import public as _evaluation_public  # noqa: F401
+    from detect_ai.modules.identity import public as _identity_public  # noqa: F401
+    from detect_ai.modules.leave import public as _leave_public  # noqa: F401
+    from detect_ai.modules.recognition import public as _recognition_public  # noqa: F401
+    from detect_ai.shared.kernel import system_setting  # noqa: F401
     async with engine.begin() as c:
         await c.run_sync(Base.metadata.create_all)
         if is_sqlite:

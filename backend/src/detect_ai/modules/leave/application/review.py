@@ -10,18 +10,22 @@ Route chỉ còn validate (404 + quyền sở hữu) -> gọi use-case -> trả 
 from __future__ import annotations
 
 from datetime import datetime, timezone
+from typing import Any
 
-from sqlalchemy import select
-from sqlalchemy.ext.asyncio import AsyncSession
-
-from detect_ai.models.attendance_v2 import Attendance, AttendanceStatus
-from detect_ai.models.point_ledger import PointLedger
-from detect_ai.models.user import StudentProfile
-from ..infrastructure.models import LeaveRequest, LeaveStatus
+from detect_ai.modules.attendance.public import Attendance, AttendanceStatus
+from detect_ai.modules.evaluation.public import PointLedger
+from ..infrastructure.models import (
+    LeaveRequest,
+    LeaveStatus,
+    find_attendance,
+    find_refund_entry,
+    find_student_profile,
+    list_deduct_ledger_entries,
+)
 
 
 async def review_leave(
-    session: AsyncSession,
+    session: Any,
     *,
     leave: LeaveRequest,
     new_status: LeaveStatus,
@@ -38,11 +42,7 @@ async def review_leave(
     # 4. Nghiệp vụ phê duyệt (APPROVED).
     if new_status == LeaveStatus.APPROVED:
         # 4.1 Tìm hoặc tạo bản ghi attendance EXCUSED.
-        att_stmt = select(Attendance).where(
-            Attendance.schedule_id == leave.schedule_id,
-            Attendance.student_id == leave.student_id,
-        )
-        attendance = (await session.execute(att_stmt)).scalar_one_or_none()
+        attendance = await find_attendance(session, leave.schedule_id, leave.student_id)
 
         if not attendance:
             attendance = Attendance(
@@ -56,20 +56,14 @@ async def review_leave(
 
         # 4.2 Cơ chế Hoàn điểm duyệt muộn (Late Approval Refund Logic).
         if attendance and attendance.is_evaluated:
-            ledger_stmt = select(PointLedger).where(
-                PointLedger.student_id == leave.student_id,
-                PointLedger.schedule_id == leave.schedule_id,
-                PointLedger.point_delta < 0,
+            deduct_records = await list_deduct_ledger_entries(
+                session, leave.student_id, leave.schedule_id
             )
-            deduct_records = (await session.execute(ledger_stmt)).scalars().all()
 
             # Tránh hoàn điểm 2 lần.
-            refund_check_stmt = select(PointLedger).where(
-                PointLedger.student_id == leave.student_id,
-                PointLedger.schedule_id == leave.schedule_id,
-                PointLedger.reason_code == "LEAVE_REFUND",
+            already_refunded = await find_refund_entry(
+                session, leave.student_id, leave.schedule_id
             )
-            already_refunded = (await session.execute(refund_check_stmt)).scalar_one_or_none()
 
             if deduct_records and not already_refunded:
                 refund_points = sum(abs(r.point_delta) for r in deduct_records)
@@ -88,10 +82,7 @@ async def review_leave(
                 )
                 session.add(refund_entry)
 
-                sp_stmt = select(StudentProfile).where(
-                    StudentProfile.user_id == leave.student_id
-                )
-                profile = (await session.execute(sp_stmt)).scalar_one_or_none()
+                profile = await find_student_profile(session, leave.student_id)
                 if profile:
                     profile.total_point += refund_points
 

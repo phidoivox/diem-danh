@@ -1,7 +1,7 @@
 import pytest
 from sqlalchemy import select
 
-from detect_ai.models.user import Role
+from detect_ai.modules.identity.infrastructure.models import Role
 
 
 @pytest.mark.asyncio

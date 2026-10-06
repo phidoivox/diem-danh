@@ -48,6 +48,11 @@ FROM users WHERE user_code = 'GV01'
 ON CONFLICT (user_id) DO NOTHING;
 
 -- 2.3 Student
+INSERT INTO administrative_classes (id, class_code, academic_year, faculty)
+VALUES (1, 'CNTT-K24A', '2024-2028', 'Khoa Công nghệ Thông tin')
+ON CONFLICT (class_code) DO NOTHING;
+SELECT setval('administrative_classes_id_seq', (SELECT GREATEST(MAX(id), 1) FROM administrative_classes));
+
 INSERT INTO users (id, user_code, full_name, email, password_hash, role_id, is_active, created_at)
 VALUES (
     3,
@@ -60,17 +65,22 @@ VALUES (
     NOW()
 ) ON CONFLICT (user_code) DO NOTHING;
 
-INSERT INTO student_profiles (user_id, total_point, class_name, major)
-SELECT id, 100, 'CNTT-K24A', 'Kỹ thuật Phần mềm'
+INSERT INTO student_profiles (user_id, total_point, admin_class_id, class_name, major)
+SELECT id, 100, 1, 'CNTT-K24A', 'Kỹ thuật Phần mềm'
 FROM users WHERE user_code = 'SV2026001'
 ON CONFLICT (user_id) DO NOTHING;
 
 -- Reset sequence for users
 SELECT setval('users_id_seq', (SELECT GREATEST(MAX(id), 3) FROM users));
 
--- 3. DEMO CLASS & ENROLLMENT
-INSERT INTO classes (id, class_code, course_name, teacher_id, semester, total_sessions)
-SELECT 1, 'CS101.1', 'Nhập môn Trí tuệ Nhân tạo', u.id, 'HK1_2026', 15
+-- 3. DEMO COURSE & CLASS & ENROLLMENT
+INSERT INTO courses (id, course_code, course_name, credits, default_sessions)
+VALUES (1, 'INT101', 'Nhập môn Trí tuệ Nhân tạo', 3, 15)
+ON CONFLICT (course_code) DO NOTHING;
+SELECT setval('courses_id_seq', (SELECT GREATEST(MAX(id), 1) FROM courses));
+
+INSERT INTO classes (id, class_code, course_id, course_name, teacher_id, semester, total_sessions)
+SELECT 1, 'CS101.1', 1, 'Nhập môn Trí tuệ Nhân tạo', u.id, 'HK1_2026', 15
 FROM users u WHERE u.user_code = 'GV01'
 ON CONFLICT (class_code) DO NOTHING;
 
@@ -92,6 +102,7 @@ INSERT INTO system_settings (key, value, description) VALUES
     ('POINT_UNIFORM_VIOLATION', '-2', 'Trừ điểm nếu vi phạm đồng phục'),
     ('LATE_TOLERANCE_MINUTES', '15', 'Số phút cho phép đi muộn'),
     ('REQUIRE_CHECKOUT', 'false', 'Bắt buộc cả check-in và check-out mới tính đủ buổi'),
+    ('CHECKOUT_MIN_GAP_MINUTES', '5', 'Số phút tối thiểu giữa check-in và check-out'),
     ('MAX_ABSENCE_PERCENT_EXAM_BAN', '20', 'Ngưỡng % vắng tính trên cả kỳ để cấm thi'),
     ('WARNING_ABSENCE_PERCENT', '15', 'Ngưỡng % vắng gửi cảnh báo học vụ sớm')
 ON CONFLICT (key) DO UPDATE SET

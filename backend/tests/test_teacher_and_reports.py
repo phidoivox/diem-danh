@@ -8,14 +8,14 @@ from httpx import ASGITransport, AsyncClient
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
-from detect_ai.core.database import Base
-from detect_ai.core.deps import get_db
-from detect_ai.core.security import create_access_token, get_password_hash
+from detect_ai.shared.kernel.database import Base
+from detect_ai.shared.kernel.deps import get_db
+from detect_ai.shared.kernel.security import create_access_token, get_password_hash
 from detect_ai.main import app
-from detect_ai.models.academic import Class, ClassStudent, Schedule
-from detect_ai.models.attendance_v2 import Attendance, AttendanceStatus
-from detect_ai.models.user import Role, StudentProfile, TeacherProfile, User
-from detect_ai.services import report_service
+from detect_ai.modules.academic.infrastructure.models import Class, ClassStudent, Schedule
+from detect_ai.modules.attendance.infrastructure.models import Attendance, AttendanceStatus
+from detect_ai.modules.identity.infrastructure.models import Role, StudentProfile, TeacherProfile, User
+from detect_ai.modules.reporting.application import build as report_service
 
 
 @pytest_asyncio.fixture
@@ -190,8 +190,8 @@ async def seeded_data(test_session_maker):
             class_id=class1.id,
             room_name="A101",
             study_date=today,
-            start_time=time(13, 0),
-            end_time=time(23, 30),
+            start_time=time(0, 0),
+            end_time=time(23, 59),
             session_order=4,
         )
 
@@ -489,12 +489,14 @@ async def test_exam_ban_calculation(test_session_maker, seeded_data, auth_tokens
         async with test_session_maker() as session:
             yield session
 
-    # Báo cáo chỉ tính buổi đã KẾT THÚC (giờ VN). Cố định "bây giờ" = 23:30 hôm nay để
-    # buổi 13:00-16:30 hôm nay chắc chắn đã kết thúc ⇒ test không phụ thuộc giờ chạy.
+    # Báo cáo chỉ tính buổi đã KẾT THÚC (giờ VN). Cố định "bây giờ" = 23:59 hôm nay để
+    # buổi 00:00-23:59 hôm nay chắc chắn đã kết thúc ⇒ test không phụ thuộc giờ chạy.
+    # Khung giờ cả ngày: kiosk test nào cũng thấy buổi đang mở, báo cáo nào cũng thấy đã xong.
+    # (khôi phục drift 22:53 của user — giữ nguyên logic, chỉ rewire import ở Task 9c)
     monkeypatch.setattr(
         report_service,
         "now_vn",
-        lambda: datetime.combine(date.today(), time(23, 30), tzinfo=ZoneInfo("Asia/Ho_Chi_Minh")),
+        lambda: datetime.combine(date.today(), time(23, 59), tzinfo=ZoneInfo("Asia/Ho_Chi_Minh")),
     )
 
     app.dependency_overrides[get_db] = override_get_db

@@ -8,18 +8,27 @@ from openpyxl import Workbook
 from openpyxl.styles import Alignment, Border, Font, NamedStyle, PatternFill, Side
 from openpyxl.utils import get_column_letter
 from openpyxl.worksheet.worksheet import Worksheet
-from sqlalchemy import select
-from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy.orm import selectinload
 
 from detect_ai.shared.kernel.timeutil import now_vn, today_vn
-from detect_ai.models.academic import Class, ClassStudent, Schedule
-from detect_ai.models.attendance_v2 import Attendance, AttendanceStatus
-from detect_ai.models.user import User
+from detect_ai.modules.attendance.public import Attendance, AttendanceStatus
+from detect_ai.modules.evaluation.public import HALF_ABSENT_WEIGHT
+from detect_ai.modules.identity.public import User
 from detect_ai.shared.kernel.settings import load_exam_ban_thresholds
-# Vắng quy đổi: V = N_vắng + 0.5 × N_vắng_nửa_buổi (EXCUSED không tính).
-# Hằng số dùng chung từ domain/policies/exam_ban_policy (nguồn duy nhất).
-from detect_ai.domain.policies.exam_ban_policy import HALF_ABSENT_WEIGHT  # noqa: E402
+from ..infrastructure.repos import (
+    get_class_with_details,
+    list_attendances_by_schedules,
+    list_classes_ordered,
+    list_enrolled_students,
+    list_schedules_by_class,
+)
+
+# Giữ HALF_ABSENT_WEIGHT accessible qua module (test test_exam_ban_formula dùng rs.HALF_ABSENT_WEIGHT).
+__all__ = [
+    "HALF_ABSENT_WEIGHT",
+    "calculate_class_exam_ban",
+    "calculate_all_classes_exam_ban",
+    "generate_excel_exam_ban",
+]
 
 EXAM_BAN_HEADERS = [
     "STT",
@@ -118,7 +127,7 @@ def _ensure_styles(wb: Workbook) -> None:
 
 
 async def calculate_class_exam_ban(
-    session: AsyncSession,
+    session: Any,
     class_id: int,
     reference_date: Optional[date] = None,
     thresholds: Optional[tuple[float, float]] = None,
@@ -135,42 +144,20 @@ async def calculate_class_exam_ban(
     warning_percent, ban_percent = thresholds
 
     # 1. Fetch class details
-    stmt_class = (
-        select(Class)
-        .options(selectinload(Class.teacher), selectinload(Class.course))
-        .where(Class.id == class_id)
-    )
-    class_res = await session.execute(stmt_class)
-    class_obj = class_res.scalar_one_or_none()
+    class_obj = await get_class_with_details(session, class_id)
     if not class_obj:
         return None
 
     total_sessions = class_obj.total_sessions or 15
 
     # 2. Fetch enrolled students
-    stmt_students = (
-        select(User)
-        .join(ClassStudent, ClassStudent.student_id == User.id)
-        .options(selectinload(User.student_profile))
-        .where(
-            ClassStudent.class_id == class_id,
-            User.is_active == True,
-            User.deleted_at.is_(None),
-        )
-        .order_by(User.user_code)
-    )
-    students = (await session.execute(stmt_students)).scalars().all()
+    students = await list_enrolled_students(session, class_id)
 
     # 3. Fetch schedules up to reference_date, rồi CHỈ giữ buổi đã KẾT THÚC.
     #    Buổi hôm nay chưa tới (hoặc đang học) không được tính: bản ghi điểm danh
     #    chưa tồn tại nên bước 5 sẽ coi là vắng ⇒ sinh viên bị đẩy tỷ lệ vắng và
     #    bị gắn "BỊ CẤM THI" oan cho một buổi chưa diễn ra.
-    stmt_schedules = (
-        select(Schedule)
-        .where(Schedule.class_id == class_id, Schedule.study_date <= reference_date)
-        .order_by(Schedule.study_date, Schedule.start_time)
-    )
-    all_schedules = (await session.execute(stmt_schedules)).scalars().all()
+    all_schedules = await list_schedules_by_class(session, class_id, reference_date)
     # study_date/end_time lưu giờ tường địa phương (naive) nên so với giờ VN naive.
     now_local = now_vn().replace(tzinfo=None)
     schedules = [
@@ -183,8 +170,7 @@ async def calculate_class_exam_ban(
     schedule_ids = [s.id for s in schedules]
     attendances: List[Attendance] = []
     if schedule_ids:
-        stmt_att = select(Attendance).where(Attendance.schedule_id.in_(schedule_ids))
-        attendances = (await session.execute(stmt_att)).scalars().all()
+        attendances = await list_attendances_by_schedules(session, schedule_ids)
 
     att_map = {(a.schedule_id, a.student_id): a for a in attendances}
 
@@ -256,12 +242,11 @@ async def calculate_class_exam_ban(
 
 
 async def calculate_all_classes_exam_ban(
-    session: AsyncSession,
+    session: Any,
     reference_date: Optional[date] = None,
 ) -> List[Dict[str, Any]]:
     """Calculate exam-ban data across all classes in the school for admin report."""
-    stmt = select(Class).options(selectinload(Class.course)).order_by(Class.class_code)
-    classes = (await session.execute(stmt)).scalars().all()
+    classes = await list_classes_ordered(session)
 
     # Đọc cấu hình 1 lần cho cả trường thay vì mỗi lớp 1 lần
     thresholds = await load_exam_ban_thresholds(session)

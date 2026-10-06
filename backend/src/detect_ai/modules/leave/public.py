@@ -4,7 +4,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from .domain.request import LeaveStatus
-from .infrastructure.models import LeaveRequest
+from .infrastructure.models import LeaveRequest  # noqa: F401
 
 
 async def is_excused(
@@ -26,4 +26,13 @@ async def is_excused(
     return res.scalar_one_or_none() is not None
 
 
-__all__ = ["LeaveStatus", "is_excused"]
+__all__ = ["LeaveRequest", "LeaveStatus", "is_excused", "leave_router"]
+
+
+def __getattr__(name: str):
+    # Lazy: xem academic/public.py (tránh circular import qua application.review).
+    if name == "leave_router":
+        from .presentation.routes import router as leave_router
+
+        return leave_router
+    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")

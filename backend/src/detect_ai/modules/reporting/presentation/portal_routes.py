@@ -9,11 +9,10 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from detect_ai.shared.kernel.deps import get_db
-from detect_ai.models.academic import Class, ClassStudent, Schedule
-from detect_ai.models.attendance_v2 import Attendance, AttendanceStatus
-from detect_ai.models.point_ledger import PointLedger
-from detect_ai.models.user import StudentProfile, User
-from detect_ai.api.deps_auth import require_role
+from detect_ai.modules.academic.public import Class, ClassStudent, Schedule
+from detect_ai.modules.attendance.public import Attendance, AttendanceStatus
+from detect_ai.modules.evaluation.public import PointLedger
+from detect_ai.modules.identity.public import StudentProfile, User, require_role
 
 router = APIRouter(prefix="/api/v1/student", tags=["student-portal"])
 

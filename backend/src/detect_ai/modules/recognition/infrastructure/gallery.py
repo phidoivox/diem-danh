@@ -15,18 +15,14 @@ Cache versioned theo class (bump khi enroll) thay TTL mù 5 phút.
 """
 
 import time
+from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field
+from typing import Any
 
 import numpy as np
-from sqlalchemy import select, text
+from sqlalchemy import text
 
-from detect_ai.models.academic import ClassStudent
-from .models import FaceEmbedding
-from detect_ai.models.user import User
-try:
-    from .face_engine import json_to_array
-except ImportError:
-    from detect_ai.recognition.face_engine import json_to_array
+from .face_engine import json_to_array
 
 
 @dataclass
@@ -113,8 +109,11 @@ async def bump_db_version(db, class_id: int) -> int | None:
         return None
 
 
-async def load_gallery(db, class_id: int, ttl_s: int = 300, force: bool = False) -> Gallery:
+async def load_gallery(db, class_id: int, ttl_s: int = 300, force: bool = False,
+                       fetch_rows: Callable[[Any, int], Awaitable[list[tuple]]] | None = None) -> Gallery:
     # TTL trước version check: cache hit -> return, tránh 1 SELECT version/frame.
+    # fetch_rows(db, class_id) -> [(uid, code, name, emb_json)]: caller inject
+    # query (ORM ở caller) thay vì infra import model module khác.
     now = time.monotonic()
     hit = _cache.get(class_id)
     if not force and hit and now - hit[0] < max(30, ttl_s):
@@ -125,12 +124,27 @@ async def load_gallery(db, class_id: int, ttl_s: int = 300, force: bool = False)
         ver = db_ver if db_ver is not None else current_version(class_id)
     else:
         ver = current_version(class_id)
-    if pg:
+    if fetch_rows is not None:
+        rows = await fetch_rows(db, class_id)
+        gal = _rows_to_gallery(class_id, ver if ver is not None else 0, rows, now)
+    elif pg:
         gal = await _load_postgres(db, class_id, ver if ver is not None else 0, now)
     else:
-        gal = await _load_orm(db, class_id, ver, now)
+        gal = await _load_sql(db, class_id, ver, now)
     _cache[class_id] = (now, gal.version, gal)
     return gal
+
+
+def _rows_to_gallery(class_id: int, ver: int, rows: list[tuple], now: float) -> Gallery:
+    per: dict[int, dict] = {}
+    for uid, code, name, emb_json in rows:
+        try:
+            vec = json_to_array(emb_json)
+        except Exception:  # noqa: BLE001
+            continue
+        slot = per.setdefault(int(uid), {"vecs": [], "code": code, "name": name})
+        slot["vecs"].append(vec)
+    return _build_gallery(class_id, ver, per, now)
 
 
 async def _load_postgres(db, class_id: int, ver: int, now: float) -> Gallery:
@@ -148,41 +162,25 @@ async def _load_postgres(db, class_id: int, ver: int, now: float) -> Gallery:
             {"cid": class_id},
         )).all()
     except Exception:
-        return await _load_orm(db, class_id, ver, now)
-    per: dict[int, dict] = {}
-    for uid, code, name, emb_json in rows:
-        try:
-            vec = json_to_array(emb_json)
-        except Exception:  # noqa: BLE001
-            continue
-        slot = per.setdefault(int(uid), {"vecs": [], "code": code, "name": name})
-        slot["vecs"].append(vec)
-    return _build_gallery(class_id, ver, per, now)
+        return await _load_sql(db, class_id, ver, now)
+    return _rows_to_gallery(class_id, ver, rows, now)
 
 
-async def _load_orm(db, class_id: int, ver: int, now: float) -> Gallery:
-    """Nạp bằng ORM từ cột JSON (SQLite dev)."""
-    stmt = (
-        select(User, FaceEmbedding)
-        .join(ClassStudent, ClassStudent.student_id == User.id)
-        .join(FaceEmbedding, FaceEmbedding.user_id == User.id)
-        .where(
-            ClassStudent.class_id == class_id,
-            User.is_active == True,  # noqa: E712
-            User.deleted_at.is_(None),
-            FaceEmbedding.is_active == True,  # noqa: E712
-        )
-    )
-    rows = (await db.execute(stmt)).all()
-    per: dict[int, dict] = {}
-    for user, emb in rows:
-        try:
-            vec = json_to_array(emb.embedding)
-        except Exception:  # noqa: BLE001
-            continue
-        slot = per.setdefault(user.id, {"vecs": [], "code": user.user_code, "name": user.full_name})
-        slot["vecs"].append(vec)
-    return _build_gallery(class_id, ver, per, now)
+async def _load_sql(db, class_id: int, ver: int, now: float) -> Gallery:
+    """Nạp bằng SQL thuần (SQLite dev + fallback). Không import model module khác."""
+    # SQLite không hiểu IS TRUE, Postgres không hiểu = 1 -> chọn theo dialect.
+    bool_true = "IS TRUE" if _is_postgres(db) else "= 1"
+    rows = (await db.execute(
+        text(f"""SELECT u.id, u.user_code, u.full_name, fe.embedding
+                FROM users u
+                JOIN class_students cs ON cs.student_id = u.id
+                JOIN face_embeddings fe ON fe.user_id = u.id
+                WHERE cs.class_id = :cid
+                  AND u.is_active {bool_true} AND u.deleted_at IS NULL
+                  AND fe.is_active {bool_true}"""),
+        {"cid": class_id},
+    )).all()
+    return _rows_to_gallery(class_id, ver, rows, now)
 
 
 def _build_gallery(class_id: int, ver: int, per: dict, now: float) -> Gallery:

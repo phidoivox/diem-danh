@@ -8,7 +8,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from detect_ai.shared.kernel.deps import get_db
 from ..application.nightly import run_nightly_evaluation
-from detect_ai.api.deps_auth import require_role
+from detect_ai.modules.identity.public import require_role
 
 router = APIRouter(dependencies=[Depends(require_role("ADMIN"))])
 

@@ -8,13 +8,13 @@ from sqlalchemy.ext.asyncio import create_async_engine, async_sessionmaker, Asyn
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy import select
 
-from detect_ai.core.database import Base
-from detect_ai.models.user import Role, User, StudentProfile, TeacherProfile
-from detect_ai.models.academic import Class, ClassStudent, Schedule
-from detect_ai.models.attendance_v2 import Attendance, AttendanceStatus
-from detect_ai.models.leave_request import LeaveRequest, LeaveStatus
-from detect_ai.models.point_ledger import PointLedger
-from detect_ai.models.system_setting import SystemSetting
+from detect_ai.shared.kernel.database import Base
+from detect_ai.modules.identity.infrastructure.models import Role, User, StudentProfile, TeacherProfile
+from detect_ai.modules.academic.infrastructure.models import Class, ClassStudent, Schedule
+from detect_ai.modules.attendance.infrastructure.models import Attendance, AttendanceStatus
+from detect_ai.modules.leave.infrastructure.models import LeaveRequest, LeaveStatus
+from detect_ai.modules.evaluation.infrastructure.models import PointLedger
+from detect_ai.shared.kernel.system_setting import SystemSetting
 
 
 @pytest_asyncio.fixture
@@ -363,7 +363,7 @@ async def test_schedule_check_constraint(test_db_session: AsyncSession):
 
 @pytest.mark.asyncio
 async def test_supabase_storage_local_fallback():
-    from detect_ai.core.supabase import SupabaseStorageHelper
+    from detect_ai.shared.kernel.supabase import SupabaseStorageHelper
 
     # Thư mục tạm nằm trong repo, tạo với quyền mặc định (không dùng fixture tmp_path):
     # fixture này tạo thư mục với mode 0o700 nên bị một số môi trường sandbox chặn truy cập.
@@ -379,10 +379,10 @@ async def test_supabase_storage_local_fallback():
             content=b"fake-image-bytes",
             content_type="image/png",
         )
-        assert url == "/static/storage/leave-proofs/test_proof.png"
+        assert url == "/api/v1/files/leave-proof/test_proof.png"
 
         pub_url = await storage.get_public_url(SupabaseStorageHelper.BUCKET_LEAVE_PROOFS, "test_proof.png")
-        assert pub_url == "/static/storage/leave-proofs/test_proof.png"
+        assert pub_url == "/api/v1/files/leave-proof/test_proof.png"
 
         deleted = await storage.delete_file(SupabaseStorageHelper.BUCKET_LEAVE_PROOFS, "test_proof.png")
         assert deleted is True
@@ -395,102 +395,8 @@ async def test_supabase_storage_local_fallback():
 
 
 @pytest.mark.asyncio
-async def test_supabase_storage_cloud_mode_uses_storage3():
-    """Chế độ cloud: xác minh request thật gửi tới Supabase Storage qua server HTTP cục bộ.
-
-    Đảm bảo client storage3 được cấu hình đúng base URL `/storage/v1`, header
-    `apikey` + `Authorization: Bearer <service_key>` và cờ `x-upsert`.
-    """
-    import json
-    import threading
-    from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
-
-    from detect_ai.core.supabase import SupabaseStorageHelper
-
-    received: list[dict] = []
-
-    class Handler(BaseHTTPRequestHandler):
-        def log_message(self, *args):  # tắt log ồn ào của http.server
-            pass
-
-        def _reply(self, payload):
-            body = json.dumps(payload).encode()
-            self.send_response(200)
-            self.send_header("Content-Type", "application/json")
-            self.send_header("Content-Length", str(len(body)))
-            self.end_headers()
-            self.wfile.write(body)
-
-        def do_POST(self):
-            length = int(self.headers.get("Content-Length", 0))
-            received.append(
-                {
-                    "method": "POST",
-                    "path": self.path,
-                    # httpx gửi tên header ở dạng chữ thường
-                    "headers": {k.lower(): v for k, v in self.headers.items()},
-                    "body": self.rfile.read(length),
-                }
-            )
-            self._reply({"Key": "leave-proofs/proof.png", "Id": "11111111-1111-1111-1111-111111111111"})
-
-        def do_DELETE(self):
-            length = int(self.headers.get("Content-Length", 0))
-            received.append(
-                {
-                    "method": "DELETE",
-                    "path": self.path,
-                    "headers": {k.lower(): v for k, v in self.headers.items()},
-                    "body": self.rfile.read(length),
-                }
-            )
-            self._reply([{"name": "proof.png"}])
-
-    server = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
-    threading.Thread(target=server.serve_forever, daemon=True).start()
-    base_url = "http://127.0.0.1:" + str(server.server_address[1])
-    storage_root = Path(__file__).resolve().parents[1] / "data" / "_test_storage_cloud"
-    shutil.rmtree(storage_root, ignore_errors=True)
-
-    try:
-        storage = SupabaseStorageHelper(
-            supabase_url=base_url, service_key="service-role-key", storage_dir=storage_root
-        )
-        assert storage.is_cloud_enabled is True
-
-        url = await storage.upload_file(
-            bucket=SupabaseStorageHelper.BUCKET_LEAVE_PROOFS,
-            path="proof.png",
-            content=b"fake-png-bytes",
-            content_type="image/png",
-        )
-        assert url == base_url + "/storage/v1/object/public/leave-proofs/proof.png"
-
-        upload = received[0]
-        assert upload["method"] == "POST"
-        assert upload["path"] == "/storage/v1/object/leave-proofs/proof.png"
-        assert upload["headers"]["authorization"] == "Bearer service-role-key"
-        assert upload["headers"]["apikey"] == "service-role-key"
-        assert upload["headers"]["x-upsert"] == "true"
-        assert b"fake-png-bytes" in upload["body"]
-
-        assert await storage.delete_file(SupabaseStorageHelper.BUCKET_LEAVE_PROOFS, "proof.png") is True
-        # Supabase Storage nhận danh sách file cần xoá trong body của DELETE /object/{bucket}
-        assert received[1]["method"] == "DELETE"
-        assert received[1]["path"] == "/storage/v1/object/leave-proofs"
-        assert b"proof.png" in received[1]["body"]
-
-        # Cloud mode thì KHÔNG ghi file xuống đĩa local
-        assert not (storage_root / "leave-proofs" / "proof.png").exists()
-    finally:
-        server.shutdown()
-        server.server_close()
-        shutil.rmtree(storage_root, ignore_errors=True)
-
-
-@pytest.mark.asyncio
 async def test_init_db_execution():
-    from detect_ai.core.database import init_db
+    from detect_ai.shared.kernel.database import init_db
     # Verify init_db runs cleanly
     await init_db()
 

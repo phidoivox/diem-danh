@@ -11,7 +11,7 @@ from sqlalchemy.orm import selectinload
 from detect_ai.shared.kernel.deps import get_db
 from detect_ai.shared.kernel.pagination import paginate_stmt
 from ..infrastructure.models import Class, ClassStudent, Schedule
-from detect_ai.models.user import Role, StudentProfile, User
+from detect_ai.modules.identity.public import Role, StudentProfile, User
 from detect_ai.modules.identity.public import require_admin
 from detect_ai.modules.academic.presentation.dto import ClassResponse, build_class_response
 from detect_ai.shared.kernel.helpers import get_or_404

@@ -55,8 +55,8 @@ async def test_is_excused_false():
 
 
 def test_shims_completeness():
-    from detect_ai.models.leave_request import LeaveRequest as ShimLeaveRequest, LeaveStatus as ShimLeaveStatus
-    from detect_ai.api.routes_leave_requests import (
+    from detect_ai.modules.leave.infrastructure.models import LeaveRequest as ShimLeaveRequest, LeaveStatus as ShimLeaveStatus
+    from detect_ai.modules.leave.presentation.routes import (
         router as shim_router,
         submit_leave_request,
         get_student_leave_requests,
@@ -67,7 +67,7 @@ def test_shims_completeness():
         LeaveRequestPage,
         ReviewLeaveRequestSchema,
     )
-    from detect_ai.application.use_cases.review_leave import review_leave as shim_review_leave
+    from detect_ai.modules.leave.application.review import review_leave as shim_review_leave
     from detect_ai.modules.leave.infrastructure.models import LeaveRequest, LeaveStatus
     from detect_ai.modules.leave.presentation.routes import router
     from detect_ai.modules.leave.application.review import review_leave
