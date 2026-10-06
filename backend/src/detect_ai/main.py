@@ -8,17 +8,20 @@ from loguru import logger
 from prometheus_fastapi_instrumentator import Instrumentator
 from sqlalchemy.exc import IntegrityError
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
-from .modules.academic.presentation.routes import router as admin_academic
-from .modules.reporting.presentation.routes import router as admin_reports
-from .api.routes_admin_settings import router as admin_settings
-from .modules.evaluation.presentation.routes import router as admin_evaluation
-from .modules.attendance.presentation.kiosk_routes import router as kiosk
-from .modules.attendance.presentation.kiosk_ws import router as kiosk_ws
-from .modules.leave.presentation.routes import router as leave_requests
-from .modules.reporting.presentation.portal_routes import router as student_portal
-from .modules.attendance.presentation.teacher_routes import router as teacher
-from .modules.identity.presentation.admin_routes import router as admin_users
-from .modules.identity.presentation.routes import router as auth
+from .modules.academic.public import academic_router as admin_academic
+from .modules.reporting.public import reporting_router as admin_reports
+from .modules.reporting.public import settings_router as admin_settings
+from .modules.evaluation.public import evaluation_router as admin_evaluation
+from .modules.attendance.public import attendance_manual_router as attendance_manual
+from .modules.attendance.public import kiosk_router as kiosk
+from .modules.attendance.public import kiosk_ws_router as kiosk_ws
+from .modules.leave.public import leave_router as leave_requests
+from .modules.reporting.public import student_portal_router as student_portal
+from .modules.reporting.public import files_router as files
+from .modules.attendance.public import teacher_router as teacher
+from .modules.identity.public import admin_users_router as admin_users
+from .modules.identity.public import auth_router as auth
+from .modules.recognition.public import apply_cpu_threads, detect_runtime, get_engine, warmup_face_engine
 from .shared.kernel.database import Session, init_db
 from .shared.kernel.errors import integrity_error_handler
 from .shared.kernel.supabase import STORAGE_DIR
@@ -32,7 +35,6 @@ async def life(app: FastAPI):
     # Face/Spoof max 1 worker vì model ONNX/InsightFace không thread-safe khi infer
     # song song; frame bận thì drop ở tầng WS thay vì xếp hàng.
     import asyncio
-    from .recognition._providers import apply_cpu_threads, detect_runtime
 
     try:
         rt = detect_runtime()
@@ -48,13 +50,8 @@ async def life(app: FastAPI):
 
     async def _warmup():
         try:
-            from .modules.recognition.public import FaceEngine, auto_tune, get_config
-
-            cfg = auto_tune(get_config(force=True))
-            logger.info(f"recognition: {cfg.describe()}")
-            await asyncio.to_thread(FaceEngine(pack=cfg.face_pack, det_size=cfg.face_det_size,
-                                               min_size=cfg.face_min_size, max_faces=cfg.face_max_faces,
-                                               max_width=cfg.kiosk_max_width).open)
+            desc = await asyncio.to_thread(warmup_face_engine, get_engine("face"))
+            logger.info(f"recognition: {desc}")
             logger.info("kiosk warmup: insightface ready")
         except Exception as e:  # noqa: BLE001
             logger.debug(f"kiosk warmup skip: {e}")
@@ -101,8 +98,10 @@ app.include_router(leave_requests)
 app.include_router(student_portal)
 app.include_router(teacher)
 app.include_router(kiosk)
+app.include_router(attendance_manual)
 app.include_router(kiosk_ws)
 app.include_router(admin_reports)
+app.include_router(files)
 Instrumentator().instrument(app).expose(app)  # /metrics: thay badge infer_ms tay
 
 @app.get("/api/health")

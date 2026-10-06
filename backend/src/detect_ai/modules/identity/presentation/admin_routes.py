@@ -8,8 +8,7 @@ from sqlalchemy import func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
-from detect_ai.api.files import decode_upload
-from detect_ai.shared.kernel.storage_service import upload_avatar
+from detect_ai.modules.recognition.public import decode_upload, upload_avatar_image
 from detect_ai.shared.kernel.deps import get_db
 from detect_ai.shared.kernel.pagination import paginate_stmt
 from detect_ai.shared.kernel.security import get_password_hash
@@ -17,6 +16,19 @@ from ..infrastructure.models import Role, StudentProfile, TeacherProfile, User
 from .deps import require_admin
 
 router = APIRouter(dependencies=[Depends(require_admin)])
+
+
+def get_face_embedding(img_bgr):
+    """Trích vector khuôn mặt từ ảnh (wrapper patchable trong tests).
+
+    Tách khỏi enroll_image để endpoint face-enroll mock được ở biên engine
+    mà không cần model thật. Engine lấy qua port factory (get_engine),
+    không dựng FaceEngine concrete trực tiếp.
+    """
+    from detect_ai.modules.recognition.public import extract_best, get_engine
+
+    face, _quality, _live = extract_best(img_bgr, engine=get_engine("face"))
+    return face.embedding
 
 
 # =====================================================================
@@ -358,7 +370,7 @@ async def upload_user_avatar(
         )
 
     img = await decode_upload(photo)
-    avatar_url = await upload_avatar(user.user_code, img)
+    avatar_url = await upload_avatar_image(user.user_code, img)
     if avatar_url:
         user.avatar_url = avatar_url
 
@@ -366,9 +378,24 @@ async def upload_user_avatar(
 
     face_status = "skipped"
     try:
-        from detect_ai.services import face_service as _face_service
+        from detect_ai.modules.academic.public import ClassStudent
+        from detect_ai.modules.recognition.public import (
+            bump_db_version,
+            bump_version,
+            enroll_image as _enroll_image,
+            get_engine,
+        )
 
-        await _face_service.enroll_image(s, user.id, img, source="avatar")
+        async def _bump_gallery(uid: int) -> None:
+            # Query academic nằm ở caller, không ở recognition infra.
+            cids = (await s.execute(select(ClassStudent.class_id).where(
+                ClassStudent.student_id == uid))).scalars().all()
+            for cid in cids:
+                bump_version(int(cid))  # RAM cục bộ thấy ngay
+                await bump_db_version(s, int(cid))  # Postgres multi-worker; SQLite no-op
+
+        await _enroll_image(s, user.id, img, source="avatar",
+                            engine=get_engine("face"), on_enrolled=_bump_gallery)
         face_status = "enrolled"
     except Exception as e:  # noqa: BLE001
         face_status = f"no-face: {e}"
@@ -379,3 +406,35 @@ async def upload_user_avatar(
         "avatar_url": user.avatar_url,
         "face_status": face_status,
     }
+
+
+@router.post("/{user_id}/face-enroll")
+async def face_enroll(
+    user_id: int,
+    photo: UploadFile = File(...),
+    s: AsyncSession = Depends(get_db),
+):
+    """Admin ghi danh khuôn mặt từ ảnh chân dung (lưu vector vào hồ sơ SV)."""
+    import json
+
+    import numpy as np
+
+    user = (
+        await s.execute(select(User).where(User.id == user_id, User.deleted_at.is_(None)))
+    ).scalar_one_or_none()
+    if not user:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Không tìm thấy người dùng")
+    img = await decode_upload(photo)
+    try:
+        embedding = get_face_embedding(img)
+    except Exception as e:  # noqa: BLE001
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(e))
+    vec = np.asarray(embedding, dtype=np.float32).reshape(-1)
+    prof = (
+        await s.execute(select(StudentProfile).where(StudentProfile.user_id == user_id))
+    ).scalar_one_or_none()
+    if prof is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Người dùng không có hồ sơ sinh viên")
+    prof.face_embedding = json.dumps([float(v) for v in vec])
+    await s.commit()
+    return {"face_enrolled": True, "user_id": user_id}

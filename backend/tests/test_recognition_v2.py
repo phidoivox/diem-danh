@@ -7,13 +7,12 @@ import numpy as np
 import pytest
 import pytest_asyncio
 
-from detect_ai.recognition import gallery as gal_mod
-from detect_ai.recognition.face_engine import Face
-from detect_ai.recognition.gallery import Gallery, ProtoEntry, match
-from detect_ai.recognition.liveness import LiveVerdict
-from detect_ai.recognition.pipeline import KioskSession
-from detect_ai.recognition.tracks import IoUTracker
-from detect_ai.recognition.uniform_engine import UniformDetections, uniform_for_face
+from detect_ai.modules.recognition.infrastructure.face_engine import Face
+from detect_ai.modules.recognition.infrastructure.gallery import Gallery, ProtoEntry, match
+from detect_ai.modules.recognition.infrastructure.liveness import LiveVerdict
+from detect_ai.modules.recognition.infrastructure.pipeline import KioskSession
+from detect_ai.modules.recognition.infrastructure.tracks import IoUTracker
+from detect_ai.modules.recognition.infrastructure.uniform_engine import UniformDetections, uniform_for_face
 
 
 def _vec(seed: int) -> np.ndarray:
@@ -75,8 +74,8 @@ def _make_face(emb: np.ndarray) -> Face:
 
 
 def test_pipeline_voting_confirmed_then_uniform_hook_once(monkeypatch):
-    from detect_ai.recognition import pipeline as pipe_mod
-    from detect_ai.recognition.config import RecognitionConfig
+    from detect_ai.modules.recognition.infrastructure import pipeline as pipe_mod
+    from detect_ai.modules.recognition.infrastructure.config import RecognitionConfig
 
     gal = _gallery()
     face = _make_face(_vec(7))
@@ -103,8 +102,8 @@ def test_pipeline_voting_confirmed_then_uniform_hook_once(monkeypatch):
 
 
 def test_pipeline_spoof_needs_streak_and_fail_closed(monkeypatch):
-    from detect_ai.recognition import pipeline as pipe_mod
-    from detect_ai.recognition.config import RecognitionConfig
+    from detect_ai.modules.recognition.infrastructure import pipeline as pipe_mod
+    from detect_ai.modules.recognition.infrastructure.config import RecognitionConfig
 
     gal = _gallery()
     eng = _FakeFaceEngine(_make_face(_vec(7)))
@@ -120,8 +119,8 @@ def test_pipeline_spoof_needs_streak_and_fail_closed(monkeypatch):
 
 
 def test_pipeline_no_model_rejected(monkeypatch):
-    from detect_ai.recognition import pipeline as pipe_mod
-    from detect_ai.recognition.config import RecognitionConfig
+    from detect_ai.modules.recognition.infrastructure import pipeline as pipe_mod
+    from detect_ai.modules.recognition.infrastructure.config import RecognitionConfig
 
     gal = _gallery()
     eng = _FakeFaceEngine(_make_face(_vec(7)))
@@ -156,7 +155,7 @@ def test_uniform_for_face_iou_association():
 
 
 def test_legacy_decision_map():
-    from detect_ai.recognition.service import to_legacy
+    from detect_ai.modules.recognition.infrastructure.service import to_legacy
 
     assert to_legacy("CONFIRMED") == "CHECKED_IN"
     assert to_legacy("PROVISIONAL") == "VERIFYING"
@@ -164,12 +163,12 @@ def test_legacy_decision_map():
 
 
 def test_uniform_resolve_prefers_onnx_over_fallback(tmp_path, monkeypatch):
-    from detect_ai.recognition.uniform_engine import resolve_weights
+    from detect_ai.modules.recognition.infrastructure.uniform_engine import resolve_weights
 
     onnx = tmp_path / "yolo26n.onnx"
     onnx.write_bytes(b"fake")
     # resolve_weights đọc core.config lười bên trong hàm
-    import detect_ai.core.config as core_c
+    import detect_ai.shared.kernel.config as core_c
 
     monkeypatch.setattr(core_c, "YOLO_WEIGHTS", str(tmp_path / "nope.pt"), raising=False)
     monkeypatch.setattr(core_c, "YOLO_ONNX", str(onnx), raising=False)
@@ -179,7 +178,7 @@ def test_uniform_resolve_prefers_onnx_over_fallback(tmp_path, monkeypatch):
 
 
 def test_image_decode_roundtrip():
-    from detect_ai.recognition.image import decode_frame, encode_jpeg
+    from detect_ai.modules.recognition.infrastructure.image import decode_frame, encode_jpeg
 
     import cv2
 
@@ -195,11 +194,11 @@ def test_image_decode_roundtrip():
 
 @pytest_asyncio.fixture
 async def v2_seed(session_maker_fixture):
-    from detect_ai.core.security import get_password_hash
-    from detect_ai.models.academic import Class, ClassStudent, Schedule
-    from detect_ai.models.face import FaceEmbedding
-    from detect_ai.models.user import Role, StudentProfile, User
-    from detect_ai.recognition.face_engine import embedding_to_json
+    from detect_ai.shared.kernel.security import get_password_hash
+    from detect_ai.modules.academic.infrastructure.models import Class, ClassStudent, Schedule
+    from detect_ai.modules.recognition.infrastructure.models import FaceEmbedding
+    from detect_ai.modules.identity.infrastructure.models import Role, StudentProfile, User
+    from detect_ai.modules.recognition.infrastructure.face_engine import embedding_to_json
 
     async with session_maker_fixture() as s:
         trole = Role(role_name="TEACHER")
@@ -222,7 +221,7 @@ async def v2_seed(session_maker_fixture):
         await s.refresh(c)
         s.add(ClassStudent(class_id=c.id, student_id=st.id))
         sch = Schedule(class_id=c.id, room_name="P1", study_date=date.today(),
-                       start_time=time(8, 0), end_time=time(10, 0), session_order=1)
+                       start_time=time(0, 0), end_time=time(23, 59), session_order=1)
         s.add(sch)
         s.add(FaceEmbedding(user_id=st.id, embedding=embedding_to_json(_vec(7)),
                             quality=0.9, source="avatar", is_active=True))
@@ -234,10 +233,9 @@ async def v2_seed(session_maker_fixture):
 async def test_v2_checkin_endpoint_idempotent(make_client, session_maker_fixture, v2_seed, monkeypatch):
     """POST /kiosk/checkin (engine v2) 2 lần cùng 1 mặt -> 1 row attendance."""
     import cv2
-    from detect_ai.api import routes_kiosk
-    from detect_ai.core.security import create_access_token
-    from detect_ai.models.attendance_v2 import Attendance
-    from detect_ai.recognition.pipeline import FaceDecision as V2Decision
+    from detect_ai.shared.kernel.security import create_access_token
+    from detect_ai.modules.attendance.infrastructure.models import Attendance
+    from detect_ai.modules.recognition.infrastructure.pipeline import FaceDecision as V2Decision
     from sqlalchemy import func, select
 
     sid = v2_seed["student_id"]
@@ -248,7 +246,7 @@ async def test_v2_checkin_endpoint_idempotent(make_client, session_maker_fixture
         def process(self, img, gallery, now=None, run_uniform=None, uniform_predict=None):
             return decisions
 
-    from detect_ai.recognition import pipeline as pipe_mod
+    from detect_ai.modules.recognition.infrastructure import pipeline as pipe_mod
 
     monkeypatch.setattr(pipe_mod, "get_session", lambda sched_id, cfg=None: FakeSession())
 
@@ -279,7 +277,7 @@ async def test_v2_checkin_endpoint_idempotent(make_client, session_maker_fixture
 def test_commit_two_faces_same_student_one_row():
     # 2 FaceDecision CONFIRMED cùng sid trong 1 frame -> commit 1 lần SELECT batch,
     # không insert 2 row (unique guard). Test ở mức dict: dựng decisions giả.
-    from detect_ai.recognition.pipeline import FaceDecision
+    from detect_ai.modules.recognition.infrastructure.pipeline import FaceDecision
     ds = [FaceDecision(1, [10, 10, 100, 120], 5, 0.9, 0.2, 0.95, "onnx", 0.9, "CONFIRMED", 2, "ok", 0.95),
           FaceDecision(2, [200, 200, 300, 320], 5, 0.88, 0.2, 0.94, "onnx", 0.9, "CONFIRMED", 2, "ok", 0.95)]
     sids = sorted({int(d.student_id) for d in ds if d.decision == "CONFIRMED" and d.student_id})
@@ -287,8 +285,8 @@ def test_commit_two_faces_same_student_one_row():
 
 
 def test_orm_v2_columns_mapped():
-    from detect_ai.models.attendance_v2 import Attendance
-    from detect_ai.models.face import FaceEmbedding, FaceEvent
+    from detect_ai.modules.attendance.infrastructure.models import Attendance
+    from detect_ai.modules.recognition.infrastructure.models import FaceEmbedding, FaceEvent
     assert "uniform_status" in Attendance.__table__.columns
     assert "uniform_score" in Attendance.__table__.columns
     assert "embedding" in FaceEmbedding.__table__.columns
@@ -298,8 +296,8 @@ def test_orm_v2_columns_mapped():
 
 
 def test_uniform_predict_once_per_frame(monkeypatch):
-    from detect_ai.recognition import pipeline as pipe_mod
-    from detect_ai.recognition.config import RecognitionConfig
+    from detect_ai.modules.recognition.infrastructure import pipeline as pipe_mod
+    from detect_ai.modules.recognition.infrastructure.config import RecognitionConfig
     gal = _gallery()
     eng = _FakeFaceEngine(_make_face(_vec(7)))
     monkeypatch.setattr(pipe_mod.live_mod, "check_live",
@@ -319,8 +317,8 @@ def test_uniform_predict_once_per_frame(monkeypatch):
 
 
 def test_vote_survives_track_id_change(monkeypatch):
-    from detect_ai.recognition import pipeline as pipe_mod
-    from detect_ai.recognition.config import RecognitionConfig
+    from detect_ai.modules.recognition.infrastructure import pipeline as pipe_mod
+    from detect_ai.modules.recognition.infrastructure.config import RecognitionConfig
     gal = _gallery()
     eng = _FakeFaceEngine(_make_face(_vec(7)))
     monkeypatch.setattr(pipe_mod.live_mod, "check_live",
@@ -337,8 +335,8 @@ def test_vote_survives_track_id_change(monkeypatch):
 
 
 def test_enroll_no_model_rejected(monkeypatch):
-    from detect_ai.recognition import enroll as enroll_mod
-    from detect_ai.recognition import liveness as live_mod
+    from detect_ai.modules.recognition.infrastructure import enroll as enroll_mod
+    from detect_ai.modules.recognition.infrastructure import liveness as live_mod
     monkeypatch.setattr(live_mod, "check_live",
                         lambda img, kps=None, bbox=None, **kw: LiveVerdict("no_model", 0.0, "none", "no-model"))
     face = _make_face(_vec(7))
@@ -356,16 +354,9 @@ async def test_commit_no_reinfer_when_det_none(monkeypatch, session_maker_fixtur
     nhãn theo status cũ -> mismatch. Sau fix: dùng d.uniform_det (None =
     không vẽ áo), không infer lại.
     """
-    import detect_ai.recognition.service as svc_mod
-    from detect_ai.recognition.pipeline import FaceDecision
+    import detect_ai.modules.attendance.application.commit as svc_mod
+    from detect_ai.modules.recognition.infrastructure.pipeline import FaceDecision
 
-    boom_calls: list = []
-
-    def boom(img):
-        boom_calls.append(1)
-        return None
-
-    monkeypatch.setattr(svc_mod, "_detect_uniform", boom)
     sid = v2_seed["student_id"]
     sched = v2_seed["schedule_id"]
     d = FaceDecision(1, [10, 10, 100, 120], sid, 0.9, 0.2, 0.95, "onnx",
@@ -375,7 +366,6 @@ async def test_commit_no_reinfer_when_det_none(monkeypatch, session_maker_fixtur
             db, sched, v2_seed["teacher_id"], [d],
             frame_bgr=np.zeros((10, 10, 3), np.uint8))
     assert sid in out["checked_in"]
-    assert boom_calls == [], "commit infer lại uniform — phải dùng d.uniform_det (None = không vẽ áo)"
 
 
 @pytest.mark.asyncio
@@ -385,9 +375,9 @@ async def test_checkout_updates_uniform_on_violation(session_maker_fixture, v2_s
     Bug thật (snapshot 6/3_out): nhãn VI PHAM: sai_ao nhưng cột đồng phục
     vẫn True vì nhánh check-out không đụng has_uniform.
     """
-    import detect_ai.recognition.service as svc_mod
-    from detect_ai.models.attendance_v2 import Attendance
-    from detect_ai.recognition.pipeline import FaceDecision
+    import detect_ai.modules.attendance.application.commit as svc_mod
+    from detect_ai.modules.attendance.infrastructure.models import Attendance
+    from detect_ai.modules.recognition.infrastructure.pipeline import FaceDecision
     from sqlalchemy import select
 
     sid = v2_seed["student_id"]

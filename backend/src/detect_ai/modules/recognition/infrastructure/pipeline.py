@@ -25,10 +25,7 @@ import numpy as np
 
 from . import liveness as live_mod
 from .config import RecognitionConfig, get_config
-try:
-    from .face_engine import Face, FaceEngine, quality
-except ImportError:
-    from detect_ai.recognition.face_engine import Face, FaceEngine, quality
+from .face_engine import Face, FaceEngine, quality
 from .gallery import Gallery, match
 from .tracks import IoUTracker
 from .uniform_engine import uniform_for_face
@@ -256,3 +253,15 @@ def get_session(schedule_id: int, cfg: RecognitionConfig | None = None) -> Kiosk
 def reset_session(schedule_id: int) -> None:
     with _sessions_lock:
         _sessions.pop(schedule_id, None)
+
+
+def discard_student(schedule_id: int, student_id: int) -> None:
+    """Xóa sid khỏi done của ca (check-out xong cho vote lại).
+
+    attendance gọi qua public sau khi ghi check-out; recognition không
+    import ngược attendance.
+    """
+    with _sessions_lock:
+        sess = _sessions.get(schedule_id)
+        if sess is not None:
+            sess.done_students.discard(int(student_id))

@@ -2,8 +2,8 @@ from __future__ import annotations
 
 from typing import Any, Iterable
 
-from detect_ai.modules.recognition.public import commit_decisions
 from detect_ai.shared.kernel.settings import load_min_checkout_gap
+from .commit import commit_decisions
 
 
 async def record_checkin(
