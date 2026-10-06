@@ -115,6 +115,7 @@ export function ManualOverrideModal({
 
   useEffect(() => {
     if (target) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- đồng bộ form từ target prop khi mở/đổi target
       setSelectedStatus(target.currentStatus || "PRESENT");
       setNote(target.currentNote || "");
       setErrorMessage(null);

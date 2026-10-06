@@ -74,6 +74,7 @@ function TeacherReportsContent() {
       const matched = urlClassId
         ? classes.find((c) => c.id === Number(urlClassId))
         : null;
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- chọn lớp mặc định khi list về
       setSelectedClassId(matched ? matched.id : classes[0].id);
     }
   }, [classes, selectedClassId, urlClassId]);
@@ -84,32 +85,34 @@ function TeacherReportsContent() {
   }, [classes, selectedClassId]);
 
   // Students list filtered
-  const filteredStudents = useMemo(() => {
-    if (!report?.students) return [];
+  const filteredStudents: ExamBanStudent[] = (report?.students ?? []).filter((st) => {
+    const q = searchQuery.toLowerCase().trim();
+    const matchSearch =
+      !q ||
+      st.student_code.toLowerCase().includes(q) ||
+      st.full_name.toLowerCase().includes(q) ||
+      (st.class_name && st.class_name.toLowerCase().includes(q));
 
-    return report.students.filter((st) => {
-      const q = searchQuery.toLowerCase().trim();
-      const matchSearch =
-        !q ||
-        st.student_code.toLowerCase().includes(q) ||
-        st.full_name.toLowerCase().includes(q) ||
-        (st.class_name && st.class_name.toLowerCase().includes(q));
+    let matchStatus = true;
+    if (statusFilter === "BANNED") {
+      matchStatus = st.is_banned;
+    } else if (statusFilter === "WARNING") {
+      matchStatus = st.is_warning && !st.is_banned;
+    } else if (statusFilter === "ELIGIBLE") {
+      matchStatus = !st.is_banned && !st.is_warning;
+    }
 
-      let matchStatus = true;
-      if (statusFilter === "BANNED") {
-        matchStatus = st.is_banned;
-      } else if (statusFilter === "WARNING") {
-        matchStatus = st.is_warning && !st.is_banned;
-      } else if (statusFilter === "ELIGIBLE") {
-        matchStatus = !st.is_banned && !st.is_warning;
-      }
-
-      return matchSearch && matchStatus;
-    });
-  }, [report?.students, searchQuery, statusFilter]);
+    return matchSearch && matchStatus;
+  });
 
   // Metrics summary
-  const summary = useMemo(() => {
+  const summary = ((): {
+    total: number;
+    banned: number;
+    warning: number;
+    eligible: number;
+    maxRate: number;
+  } => {
     if (!report?.students || report.students.length === 0) {
       return {
         total: 0,
@@ -141,7 +144,7 @@ function TeacherReportsContent() {
       eligible,
       maxRate: Math.round(maxRate * 10) / 10,
     };
-  }, [report?.students]);
+  })();
 
   // Ngưỡng backend đang áp dụng (Admin đổi ở /admin/settings thì trang này đổi theo)
   const warnPercent = report?.warning_percent ?? 15;
@@ -154,8 +157,8 @@ function TeacherReportsContent() {
       setDownloading(true);
       const filename = `bao_cao_cam_thi_${currentClass.class_code}.xlsx`;
       await downloadTeacherExamBanExcel(selectedClassId, filename);
-    } catch (err: any) {
-      toast.error(err?.message || "Không thể xuất file Excel.");
+    } catch (err: unknown) {
+      toast.error(err instanceof Error && err.message ? err.message : "Không thể xuất file Excel.");
     } finally {
       setDownloading(false);
     }

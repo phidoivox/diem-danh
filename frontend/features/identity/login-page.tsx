@@ -38,9 +38,12 @@ export default function LoginPage() {
         password: values.password,
       });
       router.replace(getDefaultPortalPath(loggedUser.role));
-    } catch (err: any) {
+    } catch (err: unknown) {
       setError("root", {
-        message: err.message || "Tài khoản hoặc mật khẩu không chính xác.",
+        message:
+          err instanceof Error && err.message
+            ? err.message
+            : "Tài khoản hoặc mật khẩu không chính xác.",
       });
     }
   };

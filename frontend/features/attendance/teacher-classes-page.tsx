@@ -83,8 +83,8 @@ export default function TeacherClassesPage() {
     try {
       setDownloadingId(c.id);
       await downloadTeacherExamBanExcel(c.id, `cam_thi_${c.class_code}.xlsx`);
-    } catch (err: any) {
-      toast.error(err?.message || "Lỗi khi tải file báo cáo Excel");
+    } catch (err: unknown) {
+      toast.error(err instanceof Error ? err.message : "Lỗi khi tải file báo cáo Excel");
     } finally {
       setDownloadingId(null);
     }

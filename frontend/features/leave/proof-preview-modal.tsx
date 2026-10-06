@@ -49,6 +49,7 @@ export function ProofPreviewModal({
   // Mở lần 2 hết zoom cũ: reset mỗi khi đổi isOpen/proofUrl.
   useEffect(() => {
     if (isOpen) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- reset zoom khi mở/đổi file
       handleReset();
     }
   }, [isOpen, proofUrl, handleReset]);
@@ -60,6 +61,7 @@ export function ProofPreviewModal({
     let cancelled = false;
     let objectUrl: string | null = null;
     if (!isOpen || !proofUrl || !needsAuthFetch) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- đồng bộ blob URL từ browser fetch có auth + cleanup
       setAuthedSrc(null);
       return;
     }

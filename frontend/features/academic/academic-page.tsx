@@ -61,10 +61,6 @@ export default function AdminAcademicPage() {
   const [classesSize] = useState(15);
   const [classesInput, setClassesInput] = useState("");
   const classesSearch = useDebouncedValue(classesInput.trim(), 300);
-  useEffect(() => {
-    setClassesPage(1);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [classesSearch]);
   const classesQuery = useQuery({
     queryKey: ["admin-classes", classesPage, classesSearch],
     queryFn: () =>
@@ -112,10 +108,6 @@ export default function AdminAcademicPage() {
   const [coursesSize] = useState(15);
   const [coursesInput, setCoursesInput] = useState("");
   const coursesSearch = useDebouncedValue(coursesInput.trim(), 300);
-  useEffect(() => {
-    setCoursesPage(1);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [coursesSearch]);
   const coursesQuery = useQuery({
     queryKey: ["admin-courses", coursesPage, coursesSearch],
     queryFn: () =>
@@ -143,10 +135,6 @@ export default function AdminAcademicPage() {
   const [adminClassesSize] = useState(15);
   const [adminClassesInput, setAdminClassesInput] = useState("");
   const adminClassesSearch = useDebouncedValue(adminClassesInput.trim(), 300);
-  useEffect(() => {
-    setAdminClassesPage(1);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [adminClassesSearch]);
   const adminClassesQuery = useQuery({
     queryKey: ["admin-administrative-classes", adminClassesPage, adminClassesSearch],
     queryFn: () =>
@@ -451,16 +439,19 @@ export default function AdminAcademicPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [filterClassId, filterDate, filterRoom]);
 
-  // Surface query lỗi lớp lên feedback chung
-  useEffect(() => {
-    if (classesQuery.isError) {
-      const msg =
+  // Surface query lỗi lớp lên feedback chung (render-phase update thay effect:
+  // chỉ set khi error object đổi nên nút Đóng vẫn giữ được banner ẩn).
+  const [surfacedClassesError, setSurfacedClassesError] = useState<unknown>(null);
+  if (classesQuery.isError && classesQuery.error !== surfacedClassesError) {
+    setSurfacedClassesError(classesQuery.error);
+    setFeedbackMsg({
+      type: "error",
+      text:
         classesQuery.error instanceof Error
           ? classesQuery.error.message
-          : "Không thể tải danh sách lớp học";
-      setFeedbackMsg({ type: "error", text: msg });
-    }
-  }, [classesQuery.isError, classesQuery.error]);
+          : "Không thể tải danh sách lớp học",
+    });
+  }
 
   // Mở modal tạo lớp mới (reset form)
   const openCreateClassModal = () => {
@@ -770,7 +761,10 @@ export default function AdminAcademicPage() {
             <div className="flex flex-col sm:flex-row sm:items-center justify-between flex-wrap gap-2 sm:gap-3 bg-white p-3 rounded-lg border border-slate-200 shadow-xs">
               <SearchInput
                 value={classesInput}
-                onChange={setClassesInput}
+                onChange={(v) => {
+                  setClassesInput(v);
+                  setClassesPage(1);
+                }}
                 placeholder="Tìm theo mã lớp hoặc tên môn..."
                 ariaLabel="Tìm kiếm lớp học phần"
                 className="w-full sm:max-w-sm"
@@ -886,7 +880,10 @@ export default function AdminAcademicPage() {
             <div className="flex flex-col sm:flex-row sm:items-center justify-between flex-wrap gap-2 sm:gap-3 bg-white p-3 rounded-lg border border-slate-200 shadow-xs">
               <SearchInput
                 value={coursesInput}
-                onChange={setCoursesInput}
+                onChange={(v) => {
+                  setCoursesInput(v);
+                  setCoursesPage(1);
+                }}
                 placeholder="Tìm theo mã môn hoặc tên môn..."
                 ariaLabel="Tìm kiếm học phần"
                 className="w-full sm:max-w-sm"
@@ -976,7 +973,10 @@ export default function AdminAcademicPage() {
             <div className="flex flex-col sm:flex-row sm:items-center justify-between flex-wrap gap-2 sm:gap-3 bg-white p-3 rounded-lg border border-slate-200 shadow-xs">
               <SearchInput
                 value={adminClassesInput}
-                onChange={setAdminClassesInput}
+                onChange={(v) => {
+                  setAdminClassesInput(v);
+                  setAdminClassesPage(1);
+                }}
                 placeholder="Tìm theo mã lớp hoặc khoa..."
                 ariaLabel="Tìm kiếm lớp sinh hoạt"
                 className="w-full sm:max-w-sm"

@@ -24,6 +24,7 @@ export function AuthedSnapshotImg({
     let cancelled = false;
     let url: string | null = null;
     if (!needsAuth) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- sync reset when no authed fetch needed; fetch path sets state in async callback
       setObjectUrl(null);
       return;
     }

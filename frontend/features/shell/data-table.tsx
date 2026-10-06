@@ -4,6 +4,7 @@ import React from "react";
 import {
   ColumnDef,
   PaginationState,
+  Updater,
   flexRender,
   getCoreRowModel,
   getFilteredRowModel,
@@ -21,7 +22,7 @@ interface ManualPagination {
 }
 
 interface DataTableProps<T> {
-  columns: ColumnDef<T, any>[];
+  columns: ColumnDef<T, unknown>[];
   data: T[];
   searchPlaceholder?: string;
   pageSize?: number;
@@ -66,7 +67,7 @@ export function DataTable<T>({
           state: {
             pagination: { pageIndex: manualPagination.pageIndex, pageSize },
           },
-          onPaginationChange: (updater: any) => {
+          onPaginationChange: (updater: Updater<PaginationState>) => {
             const next =
               typeof updater === "function"
                 ? updater({ pageIndex: manualPagination.pageIndex, pageSize })

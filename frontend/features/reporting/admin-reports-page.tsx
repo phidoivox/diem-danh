@@ -56,6 +56,7 @@ export default function AdminReportsPage() {
   // Mặc định chọn lớp đầu tiên khi danh sách về.
   useEffect(() => {
     if (selectedClassId === "" && classes.length > 0) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- chọn mặc định lớp đầu tiên khi list về
       setSelectedClassId(classes[0].id);
     }
   }, [classes, selectedClassId]);
@@ -64,6 +65,7 @@ export default function AdminReportsPage() {
   useEffect(() => {
     const err = classesQuery.error ?? reportQuery.error;
     if (err) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- surface query error vào feedback state
       setFeedbackMsg({
         type: "error",
         text: err instanceof Error ? err.message : "Không thể tải dữ liệu báo cáo",
@@ -81,10 +83,10 @@ export default function AdminReportsPage() {
         type: "success",
         text: "Đã xuất và tải về file Excel danh sách cấm thi toàn trường thành công!",
       });
-    } catch (err: any) {
+    } catch (err: unknown) {
       setFeedbackMsg({
         type: "error",
-        text: err.message || "Không thể tải file Excel cấm thi",
+        text: err instanceof Error && err.message ? err.message : "Không thể tải file Excel cấm thi",
       });
     } finally {
       setIsDownloading(false);

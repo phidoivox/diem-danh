@@ -166,7 +166,7 @@ export interface LoginResponse {
   user: User;
 }
 
-export async function authFetch<T = any>(
+export async function authFetch<T = unknown>(
   endpoint: string,
   options: RequestInit = {}
 ): Promise<T> {
@@ -197,7 +197,7 @@ export async function authFetch<T = any>(
     try {
       const errJson = await response.json();
       if (Array.isArray(errJson.detail))
-        errorDetail = errJson.detail.map((e: any) => e?.msg || e?.message || JSON.stringify(e)).join(", ");
+        errorDetail = errJson.detail.map((e: { msg?: string; message?: string }) => e?.msg || e?.message || JSON.stringify(e)).join(", ");
       else errorDetail = errJson.detail || JSON.stringify(errJson);
     } catch {
       errorDetail = await response.text();
@@ -206,7 +206,7 @@ export async function authFetch<T = any>(
       removeToken();
       // Tập trung redirect login tại 1 chỗ thay vì mỗi caller tự xử lý.
       if (typeof window !== "undefined" && !window.location.pathname.startsWith("/login")) {
-        window.location.href = "/login";
+        window.location.href = new URL("/login", window.location.origin).toString();
       }
     }
     throw new ApiError(errorDetail || `HTTP error ${response.status}`, response.status);
@@ -230,7 +230,7 @@ export async function login(
     try {
       const errJson = await res.json();
       if (Array.isArray(errJson.detail))
-        errorDetail = errJson.detail.map((e: any) => e?.msg || e?.message || JSON.stringify(e)).join(", ");
+        errorDetail = errJson.detail.map((e: { msg?: string; message?: string }) => e?.msg || e?.message || JSON.stringify(e)).join(", ");
       else errorDetail = errJson.detail || JSON.stringify(errJson);
     } catch {
       errorDetail = await res.text();
@@ -518,8 +518,8 @@ export async function getTeacherLiveAttendance(classId: number): Promise<LiveAtt
 export async function manualOverrideAttendance(
   attendanceId: number,
   data: { status: string; note?: string; schedule_id?: number; student_id?: number }
-): Promise<any> {
-  return authFetch(`/api/v1/teacher/attendance/${attendanceId}/manual-override`, {
+): Promise<unknown> {
+  return authFetch<unknown>(`/api/v1/teacher/attendance/${attendanceId}/manual-override`, {
     method: "PUT",
     body: JSON.stringify(data),
   });
@@ -649,13 +649,13 @@ export async function kioskBackfill(classId: number): Promise<{
 }> {
   const form = new FormData();
   form.append("class_id", String(classId));
-  return authFetch("/api/v1/kiosk/backfill", { method: "POST", body: form });
+  return authFetch<{ class_id: number; enrolled: number; already: number; failed: { user_code: string; reason: string }[] }>("/api/v1/kiosk/backfill", { method: "POST", body: form });
 }
 
 export async function kioskResetSession(scheduleId: number): Promise<{ ok: boolean }> {
   const form = new FormData();
   form.append("schedule_id", String(scheduleId));
-  return authFetch("/api/v1/kiosk/reset-session", { method: "POST", body: form });
+  return authFetch<{ ok: boolean }>("/api/v1/kiosk/reset-session", { method: "POST", body: form });
 }
 
 export async function getTeacherLeaveRequests(params?: {
@@ -686,7 +686,7 @@ export async function reviewLeaveRequest(
 export async function getTeacherExamBanReport(classId: number): Promise<ExamBanReport> {
   const res = await authFetch<ExamBanReport>(`/api/v1/teacher/classes/${classId}/exam-ban-report`);
   if (res && Array.isArray(res.students)) {
-    res.students = res.students.map((st: any) => ({
+    res.students = res.students.map((st) => ({
       ...st,
       cumulative_rate: st.cumulative_rate ?? st.rate_cumulative ?? 0,
       semester_rate: st.semester_rate ?? st.rate_semester ?? 0,
@@ -698,7 +698,7 @@ export async function getTeacherExamBanReport(classId: number): Promise<ExamBanR
 export async function getAdminExamBanReport(classId: number): Promise<ExamBanReport> {
   const res = await authFetch<ExamBanReport>(`/api/v1/admin/reports/classes/${classId}/exam-ban-report`);
   if (res && Array.isArray(res.students)) {
-    res.students = res.students.map((st: any) => ({
+    res.students = res.students.map((st) => ({
       ...st,
       cumulative_rate: st.cumulative_rate ?? st.rate_cumulative ?? 0,
       semester_rate: st.semester_rate ?? st.rate_semester ?? 0,
@@ -870,7 +870,7 @@ export async function getAdminUsers(params?: {
   return res;
 }
 
-export async function createAdminUser(data: any): Promise<AdminUser> {
+export async function createAdminUser(data: Record<string, unknown>): Promise<AdminUser> {
   const res = await authFetch<AdminUser>("/api/v1/admin/users", {
     method: "POST",
     body: JSON.stringify(data),
@@ -881,7 +881,7 @@ export async function createAdminUser(data: any): Promise<AdminUser> {
   return res;
 }
 
-export async function updateAdminUser(id: number, data: any): Promise<AdminUser> {
+export async function updateAdminUser(id: number, data: Record<string, unknown>): Promise<AdminUser> {
   const res = await authFetch<AdminUser>(`/api/v1/admin/users/${id}`, {
     method: "PUT",
     body: JSON.stringify(data),
@@ -920,7 +920,7 @@ export async function kioskEnrollFace(
 ): Promise<{ ok: boolean; user_id: number; embedding_id: number; quality: number }> {
   const fd = new FormData();
   fd.append("photo", file);
-  return authFetch(`/api/v1/kiosk/enroll/${userId}`, { method: "POST", body: fd });
+  return authFetch<{ ok: boolean; user_id: number; embedding_id: number; quality: number }>(`/api/v1/kiosk/enroll/${userId}`, { method: "POST", body: fd });
 }
 
 export async function getStudentClassNames(): Promise<string[]> {
@@ -1043,14 +1043,14 @@ export async function getAdminClasses(params?: {
   return authFetch<AdminClassPage>(`/api/v1/admin/academic/classes${qs}`);
 }
 
-export async function createAdminClass(data: any): Promise<AdminClass> {
+export async function createAdminClass(data: Record<string, unknown>): Promise<AdminClass> {
   return authFetch<AdminClass>("/api/v1/admin/academic/classes", {
     method: "POST",
     body: JSON.stringify(data),
   });
 }
 
-export async function updateAdminClass(id: number, data: any): Promise<AdminClass> {
+export async function updateAdminClass(id: number, data: Record<string, unknown>): Promise<AdminClass> {
   return authFetch<AdminClass>(`/api/v1/admin/academic/classes/${id}`, {
     method: "PUT",
     body: JSON.stringify(data),
@@ -1124,14 +1124,14 @@ export async function getAdminSchedules(params?: {
   return authFetch<AdminSchedule[]>(`/api/v1/admin/academic/schedules${qs}`);
 }
 
-export async function createAdminSchedule(data: any): Promise<AdminSchedule> {
+export async function createAdminSchedule(data: Record<string, unknown>): Promise<AdminSchedule> {
   return authFetch<AdminSchedule>("/api/v1/admin/academic/schedules", {
     method: "POST",
     body: JSON.stringify(data),
   });
 }
 
-export async function updateAdminSchedule(id: number, data: any): Promise<AdminSchedule> {
+export async function updateAdminSchedule(id: number, data: Record<string, unknown>): Promise<AdminSchedule> {
   return authFetch<AdminSchedule>(`/api/v1/admin/academic/schedules/${id}`, {
     method: "PUT",
     body: JSON.stringify(data),

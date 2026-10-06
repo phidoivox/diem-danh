@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { ColumnDef } from "@tanstack/react-table";
 import { toast } from "sonner";
@@ -63,13 +63,8 @@ export default function AdminUsersPage() {
   // Server-side: queryKey chỉ đổi khi dừng gõ 300ms (tránh spam API mỗi phím).
   const searchTerm = useDebouncedValue(searchInput.trim(), 300);
 
-  // Debounce đổi term -> về trang 1 (giữ queryKey [page,...] không nhảy lung tung).
-  // roleFilter đổi đã reset trong handleRoleChange, không gộp vào effect này
-  // (tránh reset page 2 lần / loop khi tab click).
-  useEffect(() => {
-    setPage(1);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [searchTerm]);
+  // roleFilter đổi đã reset trong handleRoleChange; search đổi reset trong
+  // onChange của SearchInput bên dưới (tránh effect setPage gây cascading render).
 
   // Modal states
   const [isUserModalOpen, setIsUserModalOpen] = useState(false);
@@ -277,7 +272,10 @@ export default function AdminUsersPage() {
 
           <SearchInput
             value={searchInput}
-            onChange={setSearchInput}
+            onChange={(v) => {
+              setSearchInput(v);
+              setPage(1);
+            }}
             placeholder="Tìm theo mã, họ tên hoặc email..."
             ariaLabel="Tìm kiếm người dùng"
             className="w-full sm:max-w-xs"

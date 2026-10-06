@@ -28,9 +28,9 @@ export function FileDropzone({
   const [preview, setPreview] = useState<string | null>(null);
 
   // Preview URL cho ảnh (revoke khi đổi file/unmount để khỏi leak).
-  // eslint-disable-next-line react-hooks/set-state-in-effect
   useEffect(() => {
     if (!value) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- object-URL preview syncs File prop to browser URL with revoke cleanup
       setPreview(null);
       return;
     }

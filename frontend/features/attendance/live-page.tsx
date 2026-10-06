@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useMemo } from "react";
+import React, { useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import Link from "next/link";
@@ -102,34 +102,31 @@ export default function TeacherLiveAttendancePage() {
     setIsHistoryModalOpen(true);
   };
 
-  // Filtered students list
-  const filteredStudents = useMemo(() => {
-    if (!liveData?.students) return [];
+  // Filtered students list (pure filter; React Compiler auto-memoizes,
+  // no manual useMemo so inferred/liveData.students dep mismatch can't occur).
+  const filteredStudents = (liveData?.students ?? []).filter((s) => {
+    const q = searchQuery.toLowerCase().trim();
+    const matchSearch =
+      !q ||
+      s.student_code.toLowerCase().includes(q) ||
+      s.full_name.toLowerCase().includes(q) ||
+      (s.class_name && s.class_name.toLowerCase().includes(q));
 
-    return liveData.students.filter((s) => {
-      const q = searchQuery.toLowerCase().trim();
-      const matchSearch =
-        !q ||
-        s.student_code.toLowerCase().includes(q) ||
-        s.full_name.toLowerCase().includes(q) ||
-        (s.class_name && s.class_name.toLowerCase().includes(q));
+    let matchStatus = true;
+    if (statusFilter === "CHECKED_IN") {
+      matchStatus = ["PRESENT", "LATE", "HALF_ABSENT"].includes(s.status);
+    } else if (statusFilter === "ABSENT") {
+      matchStatus = s.status === "ABSENT";
+    } else if (statusFilter === "UNIFORM_VIOLATION") {
+      matchStatus = !s.has_uniform && ["PRESENT", "LATE", "HALF_ABSENT"].includes(s.status);
+    } else if (statusFilter === "OVERRIDDEN") {
+      matchStatus = s.is_manual_override;
+    } else if (statusFilter !== "ALL") {
+      matchStatus = s.status === statusFilter;
+    }
 
-      let matchStatus = true;
-      if (statusFilter === "CHECKED_IN") {
-        matchStatus = ["PRESENT", "LATE", "HALF_ABSENT"].includes(s.status);
-      } else if (statusFilter === "ABSENT") {
-        matchStatus = s.status === "ABSENT";
-      } else if (statusFilter === "UNIFORM_VIOLATION") {
-        matchStatus = !s.has_uniform && ["PRESENT", "LATE", "HALF_ABSENT"].includes(s.status);
-      } else if (statusFilter === "OVERRIDDEN") {
-        matchStatus = s.is_manual_override;
-      } else if (statusFilter !== "ALL") {
-        matchStatus = s.status === statusFilter;
-      }
-
-      return matchSearch && matchStatus;
-    });
-  }, [liveData?.students, searchQuery, statusFilter]);
+    return matchSearch && matchStatus;
+  });
 
   const formatTime = (isoString?: string | null) => {
     if (!isoString) return "--:--";

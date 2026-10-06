@@ -66,6 +66,7 @@ export function UserAvatar({
     let cancelled = false;
     let url: string | null = null;
     if (!needsAuth || !rawSrc) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- sync reset when no authed fetch needed; fetch path sets state in async callback
       setObjectUrl(null);
       return;
     }
@@ -95,6 +96,7 @@ export function UserAvatar({
   return (
     <span className={`relative inline-flex shrink-0 ${className}`} title={displayName}>
       {resolvedSrc ? (
+        // eslint-disable-next-line @next/next/no-img-element -- blob: URL cannot be optimized by next/image
         <img
           src={resolvedSrc}
           alt={displayName}

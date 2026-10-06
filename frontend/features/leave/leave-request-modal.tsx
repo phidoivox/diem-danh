@@ -56,6 +56,7 @@ export function LeaveRequestModal({
       } else if (schedules.length > 0) {
         setValue("schedule_id", schedules[0].id);
       }
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- đồng bộ form theo schedule khi mở modal
       setSuccessMsg(null);
     }
   }, [isOpen, preselectedScheduleId, schedules, setValue]);
