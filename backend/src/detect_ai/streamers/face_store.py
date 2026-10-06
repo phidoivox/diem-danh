@@ -7,6 +7,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from detect_ai.shared.kernel.database import Session
 from detect_ai.modules.identity.infrastructure.models import User, StudentProfile
+from detect_ai.modules.recognition.infrastructure.models import FaceEmbedding
 
 try:
     from detect_ai.modules.recognition.infrastructure.bench.face_recognizer import FaceIndex
@@ -70,18 +71,20 @@ def decode_embedding(raw: Any) -> Optional[np.ndarray]:
 
 async def _load_from_session(s: AsyncSession) -> None:
     global embs, meta
+    # Embedding sống ở face_embeddings (active), không còn cột student_profiles.face_embedding.
     stmt = (
         select(
-            StudentProfile.face_embedding,
+            FaceEmbedding.embedding,
             User.user_code,
             User.full_name,
             StudentProfile.class_name,
         )
-        .join(User, StudentProfile.user_id == User.id)
+        .join(User, FaceEmbedding.user_id == User.id)
+        .outerjoin(StudentProfile, StudentProfile.user_id == User.id)
         .where(
-            User.is_active == True,
+            User.is_active == True,  # noqa: E712
             User.deleted_at.is_(None),
-            StudentProfile.face_embedding.isnot(None),
+            FaceEmbedding.is_active == True,  # noqa: E712
         )
     )
     rows = (await s.execute(stmt)).all()

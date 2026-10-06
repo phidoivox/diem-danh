@@ -18,19 +18,6 @@ from .deps import require_admin
 router = APIRouter(dependencies=[Depends(require_admin)])
 
 
-def get_face_embedding(img_bgr):
-    """Trích vector khuôn mặt từ ảnh (wrapper patchable trong tests).
-
-    Tách khỏi enroll_image để endpoint face-enroll mock được ở biên engine
-    mà không cần model thật. Engine lấy qua port factory (get_engine),
-    không dựng FaceEngine concrete trực tiếp.
-    """
-    from detect_ai.modules.recognition.public import extract_best, get_engine
-
-    face, _quality, _live = extract_best(img_bgr, engine=get_engine("face"))
-    return face.embedding
-
-
 # =====================================================================
 # SCHEMAS
 # =====================================================================
@@ -414,27 +401,23 @@ async def face_enroll(
     photo: UploadFile = File(...),
     s: AsyncSession = Depends(get_db),
 ):
-    """Admin ghi danh khuôn mặt từ ảnh chân dung (lưu vector vào hồ sơ SV)."""
-    import json
-
-    import numpy as np
-
+    """Admin ghi danh khuôn mặt từ ảnh chân dung (lưu vector vào face_embeddings)."""
     user = (
         await s.execute(select(User).where(User.id == user_id, User.deleted_at.is_(None)))
     ).scalar_one_or_none()
     if not user:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Không tìm thấy người dùng")
     img = await decode_upload(photo)
-    try:
-        embedding = get_face_embedding(img)
-    except Exception as e:  # noqa: BLE001
-        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(e))
-    vec = np.asarray(embedding, dtype=np.float32).reshape(-1)
     prof = (
         await s.execute(select(StudentProfile).where(StudentProfile.user_id == user_id))
     ).scalar_one_or_none()
     if prof is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Người dùng không có hồ sơ sinh viên")
-    prof.face_embedding = json.dumps([float(v) for v in vec])
-    await s.commit()
+    from detect_ai.modules.recognition.public import enroll_image as _enroll_image
+    from detect_ai.modules.recognition.public import get_engine
+
+    try:
+        await _enroll_image(s, user_id, img, source="avatar", engine=get_engine("face"))
+    except Exception as e:  # noqa: BLE001
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(e))
     return {"face_enrolled": True, "user_id": user_id}

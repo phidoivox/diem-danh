@@ -88,7 +88,6 @@ async def test_user_student_profile_1_to_1(test_db_session: AsyncSession):
 
     profile = StudentProfile(
         user_id=student_user.id,
-        face_embedding="[0.12, 0.34, 0.56]",
         total_point=100,
         class_name="CNTT-K24A",
         major="Computer Science",

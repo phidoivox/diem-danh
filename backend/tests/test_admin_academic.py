@@ -15,6 +15,7 @@ from detect_ai.modules.attendance.infrastructure.models import Attendance, Atten
 from detect_ai.modules.evaluation.infrastructure.models import PointLedger
 from detect_ai.shared.kernel.system_setting import SystemSetting
 from detect_ai.modules.identity.infrastructure.models import Role, StudentProfile, TeacherProfile, User
+from detect_ai.modules.recognition.infrastructure.models import FaceEmbedding
 
 
 @pytest_asyncio.fixture
@@ -97,7 +98,6 @@ async def seeded_data(test_session_maker):
 
         student_profile = StudentProfile(
             user_id=student.id,
-            face_embedding="[0.1, 0.2, 0.3]",
             total_point=100,
             class_name="CNTT-K24A",
             major="Kỹ thuật phần mềm",
@@ -374,12 +374,27 @@ async def test_admin_face_enroll(client: AsyncClient, seeded_data, test_session_
     _, encoded = cv2.imencode(".jpg", img)
     img_bytes = encoded.tobytes()
 
-    # Mock face recognizer embed to return a fake 512-dim vector for testing
+    # Mock enroll_image ở biên recognition để không cần model thật
     from unittest.mock import patch
 
-    fake_vector = np.full((512,), 0.05, dtype=np.float32)
+    async def _fake_enroll(db, user_id, img_bgr, source="avatar", engine=None, on_enrolled=None):
+        from detect_ai.modules.recognition.infrastructure.face_engine import embedding_to_json
 
-    with patch("detect_ai.modules.identity.presentation.admin_routes.get_face_embedding", return_value=fake_vector):
+        row = FaceEmbedding(
+            user_id=user_id,
+            embedding=embedding_to_json(np.full((512,), 0.05, dtype=np.float32)),
+            quality=0.9,
+            source=source,
+            is_active=True,
+        )
+        db.add(row)
+        await db.commit()
+        return row
+
+    with patch(
+        "detect_ai.modules.recognition.public.enroll_image",
+        side_effect=_fake_enroll,
+    ):
         res = await client.post(
             f"/api/v1/admin/users/{student_id}/face-enroll",
             files={"photo": ("face.jpg", io.BytesIO(img_bytes), "image/jpeg")},
@@ -388,15 +403,15 @@ async def test_admin_face_enroll(client: AsyncClient, seeded_data, test_session_
         assert res.status_code == 200, res.text
         assert res.json()["face_enrolled"] is True
 
-    # Verify student_profile has face_embedding updated
+    # Verify face_embeddings có row mới
     async with test_session_maker() as session:
-        prof = (
+        rows = (
             await session.execute(
-                select(StudentProfile).where(StudentProfile.user_id == student_id)
+                select(FaceEmbedding).where(FaceEmbedding.user_id == student_id)
             )
-        ).scalar_one()
-        assert prof.face_embedding is not None
-        assert "0.05" in prof.face_embedding
+        ).scalars().all()
+        assert len(rows) >= 1
+        assert "0.05" in rows[-1].embedding
 
 
 # =====================================================================

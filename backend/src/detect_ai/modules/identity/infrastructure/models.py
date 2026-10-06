@@ -7,7 +7,6 @@ from sqlalchemy import (
     ForeignKey,
     Integer,
     String,
-    Text,
     func,
 )
 from sqlalchemy.orm import Mapped, mapped_column, relationship
@@ -103,7 +102,6 @@ class StudentProfile(Base):
         nullable=False,
         index=True,
     )
-    face_embedding: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     total_point: Mapped[int] = mapped_column(Integer, default=100, nullable=False)
     class_name: Mapped[str] = mapped_column(String(100), default="", nullable=False)
     major: Mapped[str] = mapped_column(String(100), default="", nullable=False)

@@ -16,6 +16,7 @@ from detect_ai.modules.academic.infrastructure.models import Class, ClassStudent
 from detect_ai.modules.attendance.infrastructure.models import Attendance, AttendanceStatus
 from detect_ai.shared.kernel.system_setting import SystemSetting
 from detect_ai.modules.identity.infrastructure.models import Role, StudentProfile, User
+from detect_ai.modules.recognition.infrastructure.models import FaceEmbedding
 from detect_ai.streamers import face_store
 
 
@@ -82,11 +83,17 @@ async def kiosk_test_data(test_session_maker):
 
         sp1 = StudentProfile(
             user_id=student1.id,
-            face_embedding=json.dumps(dummy_vec1.tolist()),
             class_name="CNTT-K22A",
             total_point=100,
         )
         session.add(sp1)
+        session.add(FaceEmbedding(
+            user_id=student1.id,
+            embedding=json.dumps(dummy_vec1.tolist()),
+            quality=0.9,
+            source="avatar",
+            is_active=True,
+        ))
 
         # Student 2: Not enrolled in Class 1 (different class)
         student2 = User(
@@ -103,11 +110,17 @@ async def kiosk_test_data(test_session_maker):
 
         sp2 = StudentProfile(
             user_id=student2.id,
-            face_embedding=json.dumps([0.1, 0.2, 0.3]),  # short embedding to test padding
             class_name="CNTT-K22B",
             total_point=100,
         )
         session.add(sp2)
+        session.add(FaceEmbedding(
+            user_id=student2.id,
+            embedding=json.dumps([0.1, 0.2, 0.3]),  # short embedding to test padding
+            quality=0.5,
+            source="avatar",
+            is_active=True,
+        ))
 
         # Student 3: Inactive student
         student3 = User(
@@ -124,11 +137,17 @@ async def kiosk_test_data(test_session_maker):
 
         sp3 = StudentProfile(
             user_id=student3.id,
-            face_embedding=json.dumps([0.5] * 512),
             class_name="CNTT-K22A",
             total_point=100,
         )
         session.add(sp3)
+        session.add(FaceEmbedding(
+            user_id=student3.id,
+            embedding=json.dumps([0.5] * 512),
+            quality=0.9,
+            source="avatar",
+            is_active=True,
+        ))
 
         # Student 4: Soft-deleted student
         student4 = User(
@@ -146,11 +165,17 @@ async def kiosk_test_data(test_session_maker):
 
         sp4 = StudentProfile(
             user_id=student4.id,
-            face_embedding=json.dumps([0.6] * 512),
             class_name="CNTT-K22A",
             total_point=100,
         )
         session.add(sp4)
+        session.add(FaceEmbedding(
+            user_id=student4.id,
+            embedding=json.dumps([0.6] * 512),
+            quality=0.9,
+            source="avatar",
+            is_active=True,
+        ))
 
         # 4. Class
         clazz = Class(

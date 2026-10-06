@@ -146,7 +146,7 @@ async def seeded_data(test_session_maker):
                 TeacherProfile(user_id=teacher2.id, department="CNTT", academic_title="TS", office_room="A1-102"),
             ]
             + [
-                StudentProfile(user_id=sv.id, face_embedding="[0.11, 0.22]", total_point=INITIAL_POINT, class_name="CNTT-K24E2E", major="KTPM")
+                StudentProfile(user_id=sv.id, total_point=INITIAL_POINT, class_name="CNTT-K24E2E", major="KTPM")
                 for sv in students
             ]
         )

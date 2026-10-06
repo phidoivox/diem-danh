@@ -26,8 +26,6 @@ class FaceEmbedding(Base):
     embedding: Mapped[str] = mapped_column(Text, nullable=False)
     quality: Mapped[float] = mapped_column(Float, default=0.0, nullable=False)
     source: Mapped[str] = mapped_column(String(20), default="avatar", nullable=False)
-    model_version: Mapped[str] = mapped_column(String(32), default="buffalo_s", nullable=False)
-    det_score: Mapped[float] = mapped_column(Float, default=0.0, nullable=False)
     is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
