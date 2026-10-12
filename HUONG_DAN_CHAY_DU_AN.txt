@@ -1,0 +1,140 @@
+================================================================================
+    HƯỚNG DẪN KHỞI CHẠY HỆ THỐNG DETECT AI (SMART CLASSROOM MANAGEMENT)
+================================================================================
+
+Dự án: Hệ thống Quản lý & Điểm danh Lớp học Thông minh bằng AI
+Bao gồm:
+  - Backend: FastAPI, InsightFace (nhận diện mặt), YOLO (đồng phục), SQLite/PostgreSQL
+  - Frontend: Next.js 16 (App Router), React 19, Tailwind CSS v4
+
+--------------------------------------------------------------------------------
+I. TÀI KHOẢN ĐĂNG NHẬP DÙNG THỬ CÓ SẴN
+--------------------------------------------------------------------------------
+Hệ thống đã tự động nạp sẵn 3 tài khoản mẫu với mật khẩu chung: 123456
+
+1. TÀI KHOẢN QUẢN TRỊ VIÊN (ADMIN)
+   - Email: admin@school.edu.vn (hoặc Mã: ADMIN01)
+   - Mật khẩu: 123456
+   - Quyền hạn: Quản lý người dùng, đào tạo, môn học, xếp lịch học, quản lý hạnh kiểm,
+     xem báo cáo cấm thi toàn trường, cấu hình tham số hệ thống.
+
+2. TÀI KHOẢN GIẢNG VIÊN (TEACHER)
+   - Email: nguyenvana@school.edu.vn (hoặc Mã: GV01)
+   - Mật khẩu: 123456
+   - Quyền hạn: Xem danh sách lớp phụ trách, mở camera Kiosk điểm danh khuôn mặt,
+     sửa điểm danh thủ công, duyệt đơn xin nghỉ phép, xuất báo cáo cấm thi Excel.
+
+3. TÀI KHOẢN SINH VIÊN (STUDENT)
+   - Email: mai.tt2026@student.edu.vn (hoặc Mã: SV2026001)
+   - Mật khẩu: 123456
+   - Quyền hạn: Xem thời khóa biểu cá nhân, lịch sử điểm danh từng buổi, theo dõi
+     sổ cái điểm rèn luyện (95 điểm khởi điểm), nộp đơn xin nghỉ phép kèm ảnh minh chứng.
+
+--------------------------------------------------------------------------------
+II. ĐỊA CHỈ TRUY CẬP HỆ THỐNG SAU KHI KHỞI CHẠY
+--------------------------------------------------------------------------------
+  - Giao diện Web (Frontend) : http://localhost:3000
+  - API Backend              : http://localhost:8000
+  - Tài liệu Swagger API     : http://localhost:8000/docs
+  - Kiểm tra trạng thái API  : http://localhost:8000/api/health
+
+================================================================================
+CÁCH 1: KHỞI CHẠY BẰNG DOCKER (KHUYÊN DÙNG NHẤT - 1 CHẠM)
+================================================================================
+Yêu cầu: Máy đã cài đặt Docker và Docker Compose (ví dụ: Docker Desktop).
+
+Bước 1: Mở Terminal / PowerShell tại thư mục gốc của dự án.
+
+Bước 2: Tạo file cấu hình môi trường cho Backend:
+  - Trên Windows (PowerShell):
+      copy backend\.env.example backend\.env
+  - Trên Linux / macOS:
+      cp backend/.env.example backend/.env
+
+Bước 3: Khởi chạy toàn bộ hệ thống bằng 1 lệnh duy nhất:
+      docker compose up -d --build
+
+Bước 4: Mở trình duyệt và truy cập: http://localhost:3000
+
+* Để dừng hệ thống:
+      docker compose down
+
+================================================================================
+CÁCH 2: KHỞI CHẠY THỦ CÔNG TRÊN MÁY (DÀNH CHO LẬP TRÌNH VIÊN)
+================================================================================
+
+--- PHẦN 1: KHỞI CHẠY BACKEND (FASTAPI) ---
+Yêu cầu: Python >= 3.12 (khuyến khích dùng công cụ `uv` để cài nhanh: https://docs.astral.sh/uv/)
+
+Bước 1: Mở Terminal, di chuyển vào thư mục backend:
+      cd backend
+
+Bước 2: Tạo file cấu hình môi trường:
+      # Windows (PowerShell):
+      copy .env.example .env
+      # Linux / macOS:
+      cp .env.example .env
+
+Bước 3: Cài đặt thư viện dependencies:
+      # Cách nhanh nhất (nếu có uv):
+      uv sync
+
+      # Hoặc dùng python venv truyền thống:
+      python -m venv .venv
+      # Kích hoạt môi trường ảo:
+      #   Windows: .venv\Scripts\activate
+      #   Linux/macOS: source .venv/bin/activate
+      pip install -e .
+
+Bước 4: Khởi động máy chủ Backend:
+      # Dùng uv:
+      uv run uvicorn detect_ai.main:app --host 0.0.0.0 --port 8000 --reload
+
+      # Hoặc khi đã activate .venv:
+      uvicorn detect_ai.main:app --host 0.0.0.0 --port 8000 --reload
+
+* LƯU Ý: Mặc định backend sử dụng CSDL SQLite tự động tại `backend/data/detect_ai.db`.
+  Hệ thống sẽ TỰ ĐỘNG tạo cấu trúc bảng và TỰ ĐỘNG nạp 3 tài khoản dùng thử ở Mục I
+  ngay khi bạn khởi chạy lần đầu tiên. Không cần chạy lệnh tạo DB thủ công!
+
+
+--- PHẦN 2: KHỞI CHẠY FRONTEND (NEXT.JS) ---
+Yêu cầu: Node.js >= 18.18 (khuyến khích Node 20 LTS) và npm.
+
+Bước 1: Mở một cửa sổ Terminal MỚI, di chuyển vào thư mục frontend:
+      cd frontend
+
+Bước 2: Tạo file cấu hình môi trường:
+      # Windows (PowerShell):
+      copy .env.example .env.local
+      # Linux / macOS:
+      cp .env.example .env.local
+
+Bước 3: Cài đặt các gói thư viện:
+      npm install
+
+Bước 4: Khởi động giao diện phát triển:
+      npm run dev
+
+Bước 5: Mở trình duyệt và truy cập: http://localhost:3000
+        Đăng nhập với các tài khoản được cung cấp ở Mục I.
+
+--------------------------------------------------------------------------------
+III. LỆNH KIỂM THỬ CHẤT LƯỢNG (TESTING & QUALITY CHECK)
+--------------------------------------------------------------------------------
+1. Chạy toàn bộ 145 bài test backend:
+      cd backend
+      uv run pytest tests -v
+
+2. Kiểm tra tính toàn vẹn kiến trúc Clean Architecture:
+      cd backend
+      python scripts/check_bounds.py
+
+3. Kiểm tra TypeScript & ESLint frontend:
+      cd frontend
+      npm run lint
+
+4. Thử nghiệm đóng gói build frontend cho Production:
+      cd frontend
+      npm run build
+================================================================================
