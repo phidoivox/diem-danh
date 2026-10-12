@@ -24,6 +24,7 @@ COPY src ./src
 COPY scripts ./scripts
 COPY sql ./sql
 COPY yolo26n.pt ./
+COPY data/weights ./data/weights
 
 ENV PATH="/app/.venv/bin:$PATH"
 ENV DETECT_AI_HOST="0.0.0.0"

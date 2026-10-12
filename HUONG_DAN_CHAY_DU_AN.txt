@@ -6,6 +6,10 @@ Dự án: Hệ thống Quản lý & Điểm danh Lớp học Thông minh bằng 
 Bao gồm:
   - Backend: FastAPI, InsightFace (nhận diện mặt), YOLO (đồng phục), SQLite/PostgreSQL
   - Frontend: Next.js 16 (App Router), React 19, Tailwind CSS v4
+  - AI Models đóng gói sẵn:
+      + Đồng phục: Model YOLO ONNX đã huấn luyện (valid_shirt, invalid_shirt) đặt tại
+        `backend/data/weights/yolo26n.onnx` (sẵn sàng suy luận, không cần train lại).
+      + Khuôn mặt: InsightFace buffalo_s/l (tự động nạp khi Kiosk hoạt động).
 
 --------------------------------------------------------------------------------
 I. TÀI KHOẢN ĐĂNG NHẬP DÙNG THỬ CÓ SẴN

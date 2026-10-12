@@ -10,4 +10,6 @@ wheels/
 .venv
 
 # Runtime data (anh SV, snapshot, db local)
-data/
+data/*
+!data/weights/
+!data/weights/yolo26n.onnx
