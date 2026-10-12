@@ -67,6 +67,33 @@ async def init_db() -> None:
             await _ensure_column("classes", "course_id", "course_id INTEGER")
             await _ensure_column("student_profiles", "admin_class_id", "admin_class_id INTEGER")
             await _ensure_column("student_profiles", "is_officer", "is_officer BOOLEAN DEFAULT 0")
+
+            # Khởi tạo roles và tài khoản mặc định nếu DB SQLite chưa có dữ liệu
+            role_cnt = await c.run_sync(lambda sc: sc.exec_driver_sql("SELECT COUNT(*) FROM roles").scalar())
+            if not role_cnt:
+                await c.exec_driver_sql("INSERT INTO roles (id, role_name) VALUES (1, 'ADMIN'), (2, 'TEACHER'), (3, 'STUDENT')")
+
+            user_cnt = await c.run_sync(lambda sc: sc.exec_driver_sql("SELECT COUNT(*) FROM users").scalar())
+            if not user_cnt:
+                pwd_hash = "$2b$12$j7D8K3jeMgvKWaxk6Uwa6OrY37nj/dAJ2Ouel7iCMrZnT/Y.5ISvC"
+                await c.exec_driver_sql(
+                    "INSERT INTO users (id, user_code, full_name, email, password_hash, role_id, is_active, created_at) VALUES "
+                    f"(1, 'ADMIN01', 'Quản trị viên Hệ thống', 'admin@school.edu.vn', '{pwd_hash}', 1, 1, CURRENT_TIMESTAMP), "
+                    f"(2, 'GV01', 'TS. Nguyễn Văn A', 'nguyenvana@school.edu.vn', '{pwd_hash}', 2, 1, CURRENT_TIMESTAMP), "
+                    f"(3, 'SV2026001', 'Trần Thị Mai', 'mai.tt2026@student.edu.vn', '{pwd_hash}', 3, 1, CURRENT_TIMESTAMP)"
+                )
+                await c.exec_driver_sql(
+                    "INSERT INTO administrative_classes (id, class_code, academic_year, faculty) "
+                    "VALUES (1, 'CNTT-K24A', '2024-2028', 'Khoa Công nghệ Thông tin')"
+                )
+                await c.exec_driver_sql(
+                    "INSERT INTO teacher_profiles (user_id, department, academic_title, office_room) "
+                    "VALUES (2, 'Khoa Công nghệ Thông tin', 'Tiến sĩ', 'A1-204')"
+                )
+                await c.exec_driver_sql(
+                    "INSERT INTO student_profiles (user_id, student_code, total_point, attendance_count, absence_count, late_count, admin_class_id, is_officer) "
+                    "VALUES (3, 'SV2026001', 95, 0, 0, 0, 1, 0)"
+                )
         else:
             # Postgres/Supabase: information_schema thay PRAGMA.
             async def _ensure_pg_column(table: str, col: str, ddl: str) -> None:
