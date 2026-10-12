@@ -87,6 +87,7 @@ export default function TeacherLiveAttendancePage() {
       className: st.class_name,
       currentStatus: st.status,
       scheduleId: liveData?.schedule_id || null,
+      currentHasUniform: st.has_uniform ?? true,
     });
     setIsOverrideModalOpen(true);
   };

@@ -142,9 +142,21 @@ async def run_nightly_evaluation(
             att.is_evaluated = True
             att.evaluated_at = datetime.now(timezone.utc)
 
-            # Update profile total_point
+            # Update profile total_point: kẹp 0..100, ledger ghi delta thực tế
+            # để tổng ledger luôn khớp total_point - điểm khởi đầu (SV 95, cán sự 100).
             if profile:
-                profile.total_point = max(0, profile.total_point + point_delta)
+                _old = profile.total_point
+                if _old is None:
+                    _old = 100 if bool(getattr(profile, "is_officer", False)) else 95
+                _new = min(100, max(0, _old + point_delta))
+                point_delta = _new - _old
+                ledger_entry.point_delta = point_delta
+                profile.total_point = _new
+            else:
+                # Không có profile: kẹp ledger trên nền 100 để delta
+                # áp dụng không bao giờ vượt 0..100.
+                _new = min(100, max(0, 100 + point_delta))
+                ledger_entry.point_delta = _new - 100
 
             count_records += 1
             evaluated_student_ids.add(att.student_id)
@@ -159,4 +171,14 @@ async def run_nightly_evaluation(
         "total_records": count_records,
     }
     logger.info(f"Evaluation complete for {target_date}: {stats}")
+
+    # Digest mail warning/banned sau khi điểm đã commit. Best-effort:
+    # lỗi mail không rollback điểm, không làm fail cron.
+    try:
+        from detect_ai.shared.notifications import service as notif_service
+
+        digest = await notif_service.send_exam_digest(session, target_date)
+        stats["exam_emails"] = digest
+    except Exception as e:  # noqa: BLE001
+        logger.warning(f"[exam-digest] skip after nightly error: {e}")
     return stats

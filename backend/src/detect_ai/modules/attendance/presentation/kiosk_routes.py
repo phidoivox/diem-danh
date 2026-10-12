@@ -291,14 +291,16 @@ async def kiosk_record(
     _key: str = Depends(verify_kiosk_api_key),
     db: AsyncSession = Depends(get_db),
 ):
-    from datetime import datetime, timedelta
+    from datetime import datetime, timedelta, timezone
 
-    from detect_ai.shared.kernel.settings import as_int, load_settings_map
+    from detect_ai.shared.kernel.settings import as_int, load_min_checkout_gap, load_settings_map
 
     try:
         moment = datetime.fromisoformat(body.timestamp)
     except ValueError:
         raise HTTPException(422, "timestamp phải là ISO datetime")
+    if moment.tzinfo is None:
+        moment = moment.replace(tzinfo=timezone.utc)
     sched = (
         await db.execute(
             select(Schedule)
@@ -352,6 +354,7 @@ async def kiosk_record(
             "check_out_time": att.check_out_time.isoformat() if att.check_out_time else None,
         }
 
+    moment_utc = moment.astimezone(timezone.utc)
     att = (
         await db.execute(
             select(Attendance).where(
@@ -359,19 +362,36 @@ async def kiosk_record(
             )
         )
     ).scalar_one_or_none()
+    if att is not None and att.is_manual_override:
+        return {**_payload("ALREADY_DONE", att), "type": "ALREADY_DONE"}
     if att is None:
         status = AttendanceStatus.LATE if naive > start_dt + timedelta(minutes=late_tol) else AttendanceStatus.PRESENT
         att = Attendance(
             schedule_id=sched.id,
             student_id=student.id,
-            check_in_time=naive,
+            check_in_time=moment_utc,
             has_uniform=body.has_uniform,
             status=status,
         )
         db.add(att)
         await db.commit()
         return _payload("CHECK_IN", att)
-    att.check_out_time = naive
+    if att.check_in_time is None:
+        att.check_in_time = moment_utc
+        if att.status == AttendanceStatus.ABSENT:
+            att.status = AttendanceStatus.LATE if naive > start_dt + timedelta(minutes=late_tol) else AttendanceStatus.PRESENT
+        await db.commit()
+        return _payload("CHECK_IN", att)
+    if att.check_out_time is not None:
+        return {**_payload("ALREADY_DONE", att), "type": "ALREADY_DONE"}
+    min_gap = await load_min_checkout_gap(db)
+    ci = att.check_in_time
+    if ci is not None and ci.tzinfo is None:
+        ci = ci.replace(tzinfo=timezone.utc)
+    elapsed = (moment_utc - ci).total_seconds() if ci else float("inf")
+    if elapsed < max(0, int(min_gap)) * 60:
+        return {**_payload("CHECK_IN", att), "type": "DUPLICATE_IGNORED"}
+    att.check_out_time = moment_utc
     att.has_uniform = body.has_uniform
     await db.commit()
     return _payload("CHECK_OUT", att)

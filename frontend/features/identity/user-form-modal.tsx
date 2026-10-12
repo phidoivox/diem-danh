@@ -3,7 +3,7 @@
 import React, { useEffect, useRef } from "react";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
-import { AdminAdministrativeClass, AdminUser, createAdminUser, getStudentAdministrativeClassOptions, mediaUrl, updateAdminUser, uploadUserAvatar } from "@/features/shell";
+import { AdminAdministrativeClass, AdminUser, createAdminUser, getStudentAdministrativeClassOptions, updateAdminUser, uploadUserAvatar } from "@/features/shell";
 import {
   MAX_AVATAR_SIZE,
   userCreateSchema,
@@ -61,6 +61,7 @@ export function UserFormModal({
   });
   const [role, setRole] = React.useState<"STUDENT" | "TEACHER" | "ADMIN">("STUDENT");
   const [isActive, setIsActive] = React.useState(true);
+  const [isOfficer, setIsOfficer] = React.useState(false);
   const [serverError, setServerError] = React.useState<string | null>(null);
   const [avatarFile, setAvatarFile] = React.useState<File | null>(null);
   const [avatarPreview, setAvatarPreview] = React.useState<string | null>(null);
@@ -90,6 +91,7 @@ export function UserFormModal({
     /* eslint-disable react-hooks/set-state-in-effect -- modal cần đồng bộ state khi mở/đổi user */
     setRole(userRole);
     setIsActive(user?.is_active ?? true);
+    setIsOfficer(user?.student_profile?.is_officer ?? false);
     setServerError(null);
     setAvatarError(null);
     setAvatarFile(null);
@@ -169,7 +171,7 @@ export function UserFormModal({
 
   if (!isOpen) return null;
 
-  const existingAvatarSrc = mediaUrl(user?.avatar_url);
+  const existingAvatarSrc = user?.avatar_url ?? "";
   const displayAvatarSrc = avatarPreview || existingAvatarSrc;
 
   const handleAvatarSelect = (file: File | undefined) => {
@@ -214,6 +216,7 @@ export function UserFormModal({
           updatePayload.class_name = values.class_name?.trim() ?? "";
           if (selectedAdminClassId) updatePayload.admin_class_id = selectedAdminClassId;
           updatePayload.major = values.major?.trim() ?? "";
+          updatePayload.is_officer = isOfficer;
         } else if (role === "TEACHER") {
           updatePayload.department = values.department?.trim() ?? "";
           updatePayload.academic_title = values.academic_title?.trim() ?? "";
@@ -235,7 +238,7 @@ export function UserFormModal({
           }
         }
       } else {
-        const createPayload: Record<string, string | number | undefined> = {
+        const createPayload: Record<string, string | number | boolean | undefined> = {
           role_name: role,
           user_code: values.user_code,
           full_name: values.full_name,
@@ -644,6 +647,20 @@ export function UserFormModal({
                   />
                 </div>
               </div>
+              {isEdit && (
+                <div className="flex items-center gap-2 pt-3">
+                  <input
+                    type="checkbox"
+                    id="is_officer"
+                    checked={isOfficer}
+                    onChange={(e) => setIsOfficer(e.target.checked)}
+                    className="h-4 w-4 rounded border-slate-300 text-violet-700 focus:ring-violet-700 cursor-pointer"
+                  />
+                  <label htmlFor="is_officer" className="text-xs text-slate-700 font-medium cursor-pointer">
+                    Ban cán sự (điểm ≥ 90 mới đạt Xuất sắc; SV thường trần Tốt)
+                  </label>
+                </div>
+              )}
             </div>
           )}
 

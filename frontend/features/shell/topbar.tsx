@@ -11,9 +11,12 @@ const routeTitleMap: Record<string, { portal: string; title: string }> = {
   "/student/leave-requests": { portal: "Cổng Sinh viên", title: "Đơn xin nghỉ phép" },
   "/teacher/classes": { portal: "Cổng Giảng viên", title: "Lớp học phụ trách" },
   "/teacher/leave-reviews": { portal: "Cổng Giảng viên", title: "Duyệt đơn nghỉ phép" },
+  "/teacher/conduct": { portal: "Cổng Giảng viên", title: "Điểm rèn luyện theo lớp" },
+  "/teacher/homeroom": { portal: "Cổng Giảng viên", title: "Ban cán sự" },
   "/teacher/reports": { portal: "Cổng Giảng viên", title: "Báo cáo cấm thi" },
   "/admin/users": { portal: "Quản trị viên", title: "Quản lý người dùng" },
   "/admin/academic": { portal: "Quản trị viên", title: "Lớp học & Thời khóa biểu" },
+  "/admin/conduct": { portal: "Quản trị viên", title: "Điểm rèn luyện theo lớp" },
   "/admin/settings": { portal: "Cấu hình", title: "Tham số hệ thống" },
   "/admin/reports": { portal: "Quản trị viên", title: "Báo cáo cấm thi toàn trường" },
 };

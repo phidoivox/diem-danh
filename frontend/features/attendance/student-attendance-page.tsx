@@ -130,7 +130,7 @@ function AttendanceCard({
           )}
         </div>
 
-        {/* Điểm bị trừ */}
+        {/* Điểm */}
         <div className="flex items-center gap-1.5 ml-auto">
           <span className="text-[11px] text-slate-500">Điểm:</span>
           {renderPointDelta(item.point_delta)}
@@ -481,7 +481,7 @@ export default function StudentAttendancePage() {
                       <th className="px-4 py-3 hidden md:table-cell">Ảnh</th>
                       <th className="px-4 py-3">Đồng phục</th>
                       <th className="px-4 py-3">Trạng thái</th>
-                      <th className="px-4 py-3 text-center whitespace-nowrap">Điểm bị trừ</th>
+                      <th className="px-4 py-3 text-center whitespace-nowrap">Điểm</th>
                       <th className="px-4 py-3 hidden md:table-cell">Ghi chú</th>
                     </tr>
                   </thead>
@@ -573,7 +573,7 @@ export default function StudentAttendancePage() {
                           {renderStatusBadge(item.status)}
                         </td>
 
-                        {/* Điểm bị trừ */}
+                        {/* Điểm */}
                         <td className="px-4 py-3 text-center">
                           {renderPointDelta(item.point_delta)}
                         </td>

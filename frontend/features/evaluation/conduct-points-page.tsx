@@ -9,6 +9,7 @@ import {
   StudentConductLedger,
   ConductLedgerEntry,
 } from "@/features/shell";
+import { getConductRank } from "./conduct-rank";
 import {
   Award,
   TrendingUp,
@@ -85,7 +86,7 @@ export default function StudentConductPointsPage() {
     queryFn: getStudentConductLedger,
   });
   const ledger: StudentConductLedger = ledgerQuery.data ?? {
-    total_point: 100,
+    total_point: 95,
     items: [],
   };
   const loading = ledgerQuery.isPending;
@@ -101,35 +102,11 @@ export default function StudentConductPointsPage() {
 
   const totalPoint = ledger.total_point;
 
-  // Grade classification
-  const pointLevel = useMemo(() => {
-    if (totalPoint >= 90) {
-      return {
-        label: "Xuất sắc",
-        color: "text-emerald-700 bg-emerald-50 border-emerald-200",
-        description: "Duy trì tác phong chuẩn mực và đi học đầy đủ.",
-      };
-    }
-    if (totalPoint >= 80) {
-      return {
-        label: "Tốt",
-        color: "text-sky-700 bg-sky-50 border-sky-200",
-        description: "Điểm chuyên cần và nề nếp đạt chuẩn loại Tốt.",
-      };
-    }
-    if (totalPoint >= 65) {
-      return {
-        label: "Khá",
-        color: "text-amber-700 bg-amber-50 border-amber-200",
-        description: "Cần lưu ý tuân thủ giờ giấc và quy định đồng phục.",
-      };
-    }
-    return {
-      label: "Cảnh báo học vụ",
-      color: "text-rose-700 bg-rose-50 border-rose-200",
-      description: "Điểm chuyên cần thấp! Nguy cơ bị cấm thi nếu tiếp tục vắng.",
-    };
-  }, [totalPoint]);
+  // Xếp loại 6 mức theo khung chuẩn; ưu tiên rank server, fallback local.
+  const pointLevel = useMemo(
+    () => getConductRank(totalPoint, ledger.conduct_rank, ledger.is_officer),
+    [totalPoint, ledger.conduct_rank, ledger.is_officer],
+  );
 
   // Aggregate stats from ledger
   const stats = useMemo(() => {
@@ -220,8 +197,15 @@ export default function StudentConductPointsPage() {
                 <span className="text-xs font-semibold uppercase tracking-wider text-slate-500">
                   Điểm Chuyên cần Hiện tại
                 </span>
-                <span className={`px-2 py-0.5 rounded text-[11px] font-semibold border ${pointLevel.color}`}>
-                  {pointLevel.label}
+                <span className="flex items-center gap-1.5">
+                  {ledger.is_officer && (
+                    <span className="px-2 py-0.5 rounded text-[11px] font-semibold border text-violet-700 bg-violet-50 border-violet-200">
+                      Cán sự
+                    </span>
+                  )}
+                  <span className={`px-2 py-0.5 rounded text-[11px] font-semibold border ${pointLevel.color}`}>
+                    {pointLevel.label}
+                  </span>
                 </span>
               </div>
 
@@ -245,13 +229,7 @@ export default function StudentConductPointsPage() {
               </div>
               <div className="w-full h-2 rounded-full bg-slate-100 overflow-hidden">
                 <div
-                  className={`h-full rounded-full transition-all duration-500 ${
-                    totalPoint >= 80
-                      ? "bg-emerald-600"
-                      : totalPoint >= 65
-                      ? "bg-amber-500"
-                      : "bg-rose-500"
-                  }`}
+                  className={`h-full rounded-full transition-all duration-500 ${pointLevel.bar}`}
                   style={{ width: `${Math.max(0, Math.min(100, totalPoint))}%` }}
                 />
               </div>
@@ -307,7 +285,7 @@ export default function StudentConductPointsPage() {
                   <span className="font-semibold text-slate-900 block mb-0.5">
                     Quy chế tính điểm & hoàn điểm chuyên cần tự động
                   </span>
-                  Mỗi sinh viên bắt đầu với 100 điểm. Hệ thống AI & Cron 23h59 tự động đánh giá: cộng 2 điểm khi đi học đúng giờ và có đồng phục; trừ điểm khi muộn (-1), vi phạm đồng phục (-1) hoặc vắng (-5). Nếu nộp đơn xin nghỉ phép hợp lệ được giảng viên duyệt bổ sung, hệ thống sẽ tự động tạo giao dịch hoàn điểm (`LEAVE_REFUND`).
+                  Mỗi sinh viên bắt đầu với 95 điểm (ban cán sự 100 điểm). Hệ thống AI & Cron 23h59 tự động đánh giá: cộng 2 điểm khi đi học đúng giờ và có đồng phục; trừ điểm khi muộn (-1), vi phạm đồng phục (-1) hoặc vắng (-5). Chỉ ban cán sự có điểm ≥ 90 mới đạt Xuất sắc; sinh viên thường trần loại Tốt. Nếu nộp đơn xin nghỉ phép hợp lệ được giảng viên duyệt bổ sung, hệ thống sẽ tự động tạo giao dịch hoàn điểm (`LEAVE_REFUND`).
                 </div>
               </div>
             </div>

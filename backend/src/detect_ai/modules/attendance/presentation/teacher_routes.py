@@ -4,21 +4,31 @@ from datetime import date, datetime, time
 from typing import Any, Dict, List, Optional
 from fastapi import APIRouter, Depends, HTTPException, Response, status
 from pydantic import BaseModel, ConfigDict, Field
-from sqlalchemy import func, select
+from sqlalchemy import extract, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from detect_ai.shared.kernel.deps import get_db
 from detect_ai.shared.kernel.timeutil import VN_TZ as _VN_TZ
 from detect_ai.shared.kernel.timeutil import today_vn as _today_vn
-from detect_ai.modules.academic.public import Class, ClassStudent, Schedule
+from detect_ai.modules.academic.public import (
+    AdministrativeClass,
+    Class,
+    ClassStudent,
+    Schedule,
+)
 from ..infrastructure.models import Attendance, AttendanceStatus
 from detect_ai.modules.evaluation.public import PointLedger
-from detect_ai.modules.identity.public import User
 from detect_ai.modules.reporting.public import (
+    build_class_conduct_rows,
     calculate_class_exam_ban,
+    generate_excel_conduct,
     generate_excel_exam_ban,
+    parse_month_param,
+    summarize_conduct,
 )
+from detect_ai.modules.identity.public import User
+from detect_ai.modules.identity.public import StudentProfile
 from detect_ai.modules.identity.public import require_teacher
 from detect_ai.shared.kernel.helpers import get_or_404
 
@@ -123,6 +133,7 @@ class ManualOverrideRequest(BaseModel):
     note: Optional[str] = Field("", max_length=255)
     schedule_id: Optional[int] = None
     student_id: Optional[int] = None
+    has_uniform: Optional[bool] = None
 
 
 class AttendanceDetailResponse(BaseModel):
@@ -410,6 +421,8 @@ async def get_student_attendance_history(
     current_user: User = Depends(require_teacher),
     db: AsyncSession = Depends(get_db),
 ):
+    from detect_ai.modules.reporting.public import build_student_history
+
     class_obj = (
         await db.execute(
             select(Class).options(selectinload(Class.course)).where(Class.id == class_id)
@@ -426,121 +439,16 @@ async def get_student_attendance_history(
             detail="Bạn không có quyền xem dữ liệu của lớp học này",
         )
 
-    # Sinh viên phải thuộc lớp học phần.
-    cs_stmt = select(ClassStudent).where(
-        ClassStudent.class_id == class_id,
-        ClassStudent.student_id == student_id,
-    )
-    if not (await db.execute(cs_stmt)).scalar_one_or_none():
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Sinh viên không thuộc lớp học phần này",
-        )
-    student = await db.get(User, student_id)
-
-    # Tất cả buổi học của lớp + điểm danh của SV (LEFT JOIN bằng tay để
-    # buổi chưa điểm danh vẫn hiện dòng "chưa điểm danh").
-    sched_stmt = (
-        select(Schedule)
-        .where(Schedule.class_id == class_id)
-        .order_by(Schedule.study_date.asc(), Schedule.start_time.asc())
-    )
-    schedules = (await db.execute(sched_stmt)).scalars().all()
-    att_stmt = select(Attendance).where(
-        Attendance.student_id == student_id,
-        Attendance.schedule_id.in_([s.id for s in schedules]) if schedules else False,
-    )
-    att_by_sched = (
-        {(a.schedule_id): a for a in (await db.execute(att_stmt)).scalars().all()}
-        if schedules
-        else {}
-    )
-
-    items: List[StudentHistoryItem] = []
-    summary = StudentHistorySummary(total_sessions=len(schedules))
-
-    # Bulk lấy tổng điểm biến động theo từng buổi (1 query thay N+1).
-    # Một buổi có thể có nhiều dòng ledger (NIGHTLY_EVAL + LEAVE_REFUND)
-    # nên cộng gộp theo schedule_id để ra điểm thực trừ/cộng của buổi đó.
-    delta_by_schedule: Dict[int, int] = {}
-    evaluated_schedule_ids: set[int] = set()
-    if schedules:
-        ledger_stmt = select(PointLedger).where(
-            PointLedger.student_id == student_id,
-            PointLedger.schedule_id.in_([s.id for s in schedules]),
-        )
-        for entry in (await db.execute(ledger_stmt)).scalars().all():
-            if entry.schedule_id is None:
-                continue
-            evaluated_schedule_ids.add(entry.schedule_id)
-            delta_by_schedule[entry.schedule_id] = (
-                delta_by_schedule.get(entry.schedule_id, 0) + entry.point_delta
-            )
-
-    for s in schedules:
-        att = att_by_sched.get(s.id)
-        st_str = s.start_time.strftime("%H:%M") if hasattr(s.start_time, "strftime") else str(s.start_time)
-        et_str = s.end_time.strftime("%H:%M") if hasattr(s.end_time, "strftime") else str(s.end_time)
-        point_delta = (
-            delta_by_schedule.get(s.id) if s.id in evaluated_schedule_ids else None
-        )
-        if point_delta is not None and point_delta < 0:
-            summary.total_deducted += abs(point_delta)
-        if att:
-            status_val = att.status.value if isinstance(att.status, AttendanceStatus) else str(att.status)
-            key = status_val.lower()
-            if key == "present":
-                summary.present += 1
-            elif key == "late":
-                summary.late += 1
-            elif key == "half_absent":
-                summary.half_absent += 1
-            elif key == "excused":
-                summary.excused += 1
-            else:
-                summary.absent += 1
-            items.append(
-                StudentHistoryItem(
-                    schedule_id=s.id,
-                    study_date=s.study_date,
-                    start_time=st_str,
-                    end_time=et_str,
-                    session_order=s.session_order,
-                    room_name=s.room_name,
-                    attendance_id=att.id,
-                    check_in_time=att.check_in_time,
-                    check_out_time=att.check_out_time,
-                    check_in_snapshot_url=att.check_in_snapshot_url,
-                    check_out_snapshot_url=att.check_out_snapshot_url,
-                    has_uniform=att.has_uniform,
-                    status=status_val,
-                    is_manual_override=att.is_manual_override,
-                    source=_attendance_source(att),
-                    note=att.note,
-                    point_delta=point_delta,
-                )
-            )
-        else:
-            summary.absent += 1
-            items.append(
-                StudentHistoryItem(
-                    schedule_id=s.id,
-                    study_date=s.study_date,
-                    start_time=st_str,
-                    end_time=et_str,
-                    session_order=s.session_order,
-                    room_name=s.room_name,
-                    point_delta=point_delta,
-                )
-            )
-
+    data = await build_student_history(db, class_id, student_id)
+    summary = StudentHistorySummary(**data["summary"])
+    items = [StudentHistoryItem(**it) for it in data["items"]]
     return StudentHistoryResponse(
-        class_id=class_obj.id,
-        class_code=class_obj.class_code,
-        course_name=class_obj.course_name,
-        student_id=student_id,
-        student_code=student.user_code if student else "",
-        full_name=student.full_name if student else "",
+        class_id=data["class_id"],
+        class_code=data["class_code"],
+        course_name=data["course_name"],
+        student_id=data["student_id"],
+        student_code=data["student_code"],
+        full_name=data["full_name"],
         summary=summary,
         items=items,
     )
@@ -617,6 +525,8 @@ async def manual_override_attendance(
 
     att.status = body.status
     att.note = body.note or ""
+    if body.has_uniform is not None:
+        att.has_uniform = body.has_uniform
     att.is_manual_override = True
     att.updated_by = current_user.id
 
@@ -694,3 +604,262 @@ async def export_class_exam_ban_excel(
         media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
         headers={"Content-Disposition": f'attachment; filename="{filename}"'},
     )
+
+
+class SendWarningsRequest(BaseModel):
+    only: str = "all"
+    dry_run: bool = False
+
+
+class ClassConductStudent(BaseModel):
+    student_id: int
+    student_code: str
+    full_name: str
+    class_name: str = ""
+    total_point: int
+    is_officer: bool = False
+    conduct_rank: str
+    class_delta: int
+    class_entries: int
+
+
+class ClassConductResponse(BaseModel):
+    class_id: int
+    class_code: str
+    course_name: str
+    evaluated_sessions: int
+    total_sessions: int
+    summary: dict
+    students: List[ClassConductStudent]
+
+
+async def _load_conduct_rows(db: AsyncSession, class_id: int, ym: tuple[int, int] | None):
+    """Load students + schedules (lọc tháng) + ledger -> (class_obj, schedules, rows)."""
+    class_obj = (
+        await db.execute(
+            select(Class).options(selectinload(Class.course)).where(Class.id == class_id)
+        )
+    ).scalar_one_or_none()
+    if not class_obj:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Không tìm thấy lớp học phần",
+        )
+    students = (
+        await db.execute(
+            select(User)
+            .join(ClassStudent, ClassStudent.student_id == User.id)
+            .options(selectinload(User.student_profile))
+            .where(
+                ClassStudent.class_id == class_id,
+                User.is_active == True,
+                User.deleted_at.is_(None),
+            )
+            .order_by(User.user_code)
+        )
+    ).scalars().all()
+    sched_stmt = select(Schedule).where(Schedule.class_id == class_id)
+    if ym is not None:
+        sched_stmt = sched_stmt.where(
+            extract("year", Schedule.study_date) == ym[0],
+            extract("month", Schedule.study_date) == ym[1],
+        )
+    sched_stmt = sched_stmt.order_by(Schedule.study_date, Schedule.start_time)
+    schedules = ((await db.execute(sched_stmt)).scalars().all())
+    sched_ids = [s.id for s in schedules]
+    ledger: list = []
+    if sched_ids:
+        ledger = (
+            (
+                await db.execute(
+                    select(PointLedger).where(PointLedger.schedule_id.in_(sched_ids))
+                )
+            )
+            .scalars()
+            .all()
+        )
+    rows = build_class_conduct_rows(list(students), list(schedules), list(ledger))
+    return class_obj, schedules, rows
+
+
+@router.get(
+    "/classes/{class_id}/conduct-points",
+    response_model=ClassConductResponse,
+    summary="Bảng điểm rèn luyện lớp mình: global + delta trong lớp + rank",
+)
+async def get_class_conduct_points(
+    class_id: int,
+    month: Optional[str] = None,
+    current_user: User = Depends(require_teacher),
+    db: AsyncSession = Depends(get_db),
+):
+    try:
+        ym = parse_month_param(month)
+    except ValueError as e:
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(e))
+    class_obj, schedules, rows = await _load_conduct_rows(db, class_id, ym)
+    if class_obj.teacher_id != current_user.id:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Bạn không có quyền xem dữ liệu của lớp học này",
+        )
+    evaluated = rows[0]["evaluated_sessions"] if rows else 0
+    return ClassConductResponse(
+        class_id=class_obj.id,
+        class_code=class_obj.class_code,
+        course_name=class_obj.course_name,
+        evaluated_sessions=evaluated,
+        total_sessions=len(schedules),
+        summary=summarize_conduct(rows),
+        students=[ClassConductStudent(**{k: r[k] for k in ClassConductStudent.model_fields}) for r in rows],
+    )
+
+
+@router.get(
+    "/classes/{class_id}/export-conduct-excel",
+    summary="Xuất file Excel điểm rèn luyện lớp mình (kèm lọc tháng)",
+)
+async def export_class_conduct_excel(
+    class_id: int,
+    month: Optional[str] = None,
+    current_user: User = Depends(require_teacher),
+    db: AsyncSession = Depends(get_db),
+):
+    try:
+        ym = parse_month_param(month)
+    except ValueError as e:
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(e))
+    class_obj, schedules, rows = await _load_conduct_rows(db, class_id, ym)
+    if class_obj.teacher_id != current_user.id:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Bạn không có quyền xuất báo cáo của lớp học này",
+        )
+    label = f"tháng {month}" if month else "toàn kỳ"
+    title = f"ĐIỂM RÈN LUYỆN LỚP {class_obj.class_code} ({label})"
+    subtitle = f"Môn học: {class_obj.course_name} - Đã chấm {rows[0]['evaluated_sessions'] if rows else 0}/{len(schedules)} buổi"
+    excel_bytes = generate_excel_conduct(rows, title=title, subtitle=subtitle)
+    filename = f"diem_ren_luyen_{class_obj.class_code}{('_' + month) if month else ''}.xlsx"
+    return Response(
+        content=excel_bytes,
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
+
+
+@router.post(
+    "/classes/{class_id}/send-exam-warnings",
+    summary="GV gửi mail cảnh báo/cấm thi lớp mình",
+)
+async def send_class_exam_warnings_teacher(
+    class_id: int,
+    body: SendWarningsRequest,
+    current_user: User = Depends(require_teacher),
+    db: AsyncSession = Depends(get_db),
+):
+    class_obj = await get_or_404(db, Class, class_id, detail="Không tìm thấy lớp học phần")
+    if class_obj.teacher_id != current_user.id:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Bạn không có quyền gửi mail lớp này",
+        )
+    from detect_ai.shared.notifications import service as notif_service
+
+    only = body.only if body.only in ("all", "warning", "banned") else "all"
+    return await notif_service.send_class_exam_warnings(db, class_id, only, body.dry_run)
+
+
+class OfficerUpdateRequest(BaseModel):
+    is_officer: bool
+
+
+@router.get(
+    "/homeroom-classes",
+    summary="Lớp SH do GV làm chủ nhiệm",
+)
+async def get_homeroom_classes(
+    current_user: User = Depends(require_teacher),
+    db: AsyncSession = Depends(get_db),
+):
+    rows = (
+        await db.execute(
+            select(AdministrativeClass).where(
+                AdministrativeClass.homeroom_teacher_id == current_user.id
+            )
+        )
+    ).scalars().all()
+    return [
+        {"id": r.id, "class_code": r.class_code, "faculty": r.faculty}
+        for r in rows
+    ]
+
+
+@router.get(
+    "/homeroom-classes/{admin_class_id}/students",
+    summary="GVCN xem SV lớp SH mình chủ nhiệm (kèm cờ cán sự)",
+)
+async def get_homeroom_students(
+    admin_class_id: int,
+    current_user: User = Depends(require_teacher),
+    db: AsyncSession = Depends(get_db),
+):
+    ac = await get_or_404(db, AdministrativeClass, admin_class_id, detail="Không tìm thấy lớp sinh hoạt")
+    if ac.homeroom_teacher_id != current_user.id:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Bạn không phải GVCN lớp này",
+        )
+    students = (
+        await db.execute(
+            select(User)
+            .join(StudentProfile, StudentProfile.user_id == User.id)
+            .options(selectinload(User.student_profile))
+            .where(
+                StudentProfile.admin_class_id == admin_class_id,
+                User.deleted_at.is_(None),
+            )
+            .order_by(User.user_code)
+        )
+    ).scalars().all()
+    return [
+        {
+            "id": stu.id,
+            "user_code": stu.user_code,
+            "full_name": stu.full_name,
+            "total_point": stu.student_profile.total_point if stu.student_profile else 100,
+            "is_officer": bool(stu.student_profile.is_officer) if stu.student_profile else False,
+        }
+        for stu in students
+    ]
+
+
+@router.put(
+    "/homeroom-classes/{admin_class_id}/students/{student_id}/officer",
+    summary="GVCN gán/bỏ cờ ban cán sự cho SV lớp mình",
+)
+async def set_homeroom_officer(
+    admin_class_id: int,
+    student_id: int,
+    body: OfficerUpdateRequest,
+    current_user: User = Depends(require_teacher),
+    db: AsyncSession = Depends(get_db),
+):
+    ac = await get_or_404(db, AdministrativeClass, admin_class_id, detail="Không tìm thấy lớp sinh hoạt")
+    if ac.homeroom_teacher_id != current_user.id:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Bạn không phải GVCN lớp này",
+        )
+    prof_stmt = select(StudentProfile).where(
+        StudentProfile.user_id == student_id,
+        StudentProfile.admin_class_id == admin_class_id,
+    )
+    profile = (await db.execute(prof_stmt)).scalar_one_or_none()
+    if not profile:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Sinh viên không thuộc lớp sinh hoạt này",
+        )
+    profile.is_officer = body.is_officer
+    await db.commit()
+    return {"ok": True, "student_id": student_id, "is_officer": body.is_officer}

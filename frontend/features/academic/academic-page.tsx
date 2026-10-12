@@ -31,9 +31,11 @@ import {
   getAdminUsers,
 } from "@/features/shell";
 import { ScheduleFormModal } from "./schedule-form-modal";
+import { ScheduleBulkModal } from "./schedule-bulk-modal";
 import { ConfirmDialog } from "@/features/shell";
 import { SearchInput } from "@/features/shell";
 import { useDebouncedValue } from "@/features/shell";
+import { getConductRank } from "@/features/evaluation";
 import {
   Layers,
   Calendar,
@@ -181,6 +183,7 @@ export default function AdminAcademicPage() {
 
   // Schedule modal (tạo mới khi editingSchedule = null, sửa khi có giá trị)
   const [isScheduleModalOpen, setIsScheduleModalOpen] = useState(false);
+  const [isBulkModalOpen, setIsBulkModalOpen] = useState(false);
   const [editingSchedule, setEditingSchedule] = useState<AdminSchedule | null>(null);
 
   // ConfirmDialog states (thay window.confirm chặn thread)
@@ -674,13 +677,22 @@ export default function AdminAcademicPage() {
                 {activeTab === "CLASSES" ? "Tạo lớp học mới" : activeTab === "COURSES" ? "Thêm học phần" : "Tạo lớp sinh hoạt"}
               </button>
             ) : (
-              <button
-                onClick={() => setIsScheduleModalOpen(true)}
-                className="inline-flex items-center gap-1.5 px-3.5 py-2 text-xs font-medium text-white bg-slate-900 hover:bg-slate-800 rounded-md transition-colors cursor-pointer shadow-xs"
-              >
-                <Plus size={15} />
-                Xếp lịch học phần
-              </button>
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={() => setIsBulkModalOpen(true)}
+                  className="inline-flex items-center gap-1.5 px-3.5 py-2 text-xs font-medium text-slate-900 bg-amber-100 hover:bg-amber-200 border border-amber-300 rounded-md transition-colors cursor-pointer shadow-xs"
+                >
+                  <Plus size={15} />
+                  Sinh hàng loạt
+                </button>
+                <button
+                  onClick={() => setIsScheduleModalOpen(true)}
+                  className="inline-flex items-center gap-1.5 px-3.5 py-2 text-xs font-medium text-white bg-slate-900 hover:bg-slate-800 rounded-md transition-colors cursor-pointer shadow-xs"
+                >
+                  <Plus size={15} />
+                  Xếp lịch học phần
+                </button>
+              </div>
             )}
           </div>
         </div>
@@ -783,14 +795,13 @@ export default function AdminAcademicPage() {
                       <th className="px-4 py-3">Giảng viên phụ trách</th>
                       <th className="px-4 py-3 hidden md:table-cell">Học kỳ</th>
                       <th className="px-4 py-3 text-center hidden md:table-cell">Số buổi</th>
-                      <th className="px-4 py-3 text-center">Sinh viên</th>
                       <th className="px-4 py-3 text-right">Thao tác</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-100 text-xs text-slate-700">
                     {isClassesLoading ? (
                       <tr>
-                        <td colSpan={8} className="px-4 py-12 text-center text-slate-400">
+                        <td colSpan={7} className="px-4 py-12 text-center text-slate-400">
                           <div className="flex flex-col items-center justify-center gap-2">
                             <Loader2 size={24} className="animate-spin text-slate-500" />
                             <span>Đang tải danh sách lớp học phần...</span>
@@ -799,7 +810,7 @@ export default function AdminAcademicPage() {
                       </tr>
                     ) : classes.length === 0 ? (
                       <tr>
-                        <td colSpan={8} className="px-4 py-12 text-center text-slate-400">
+                        <td colSpan={7} className="px-4 py-12 text-center text-slate-400">
                           Chưa có lớp học phần nào được tạo
                         </td>
                       </tr>
@@ -828,15 +839,6 @@ export default function AdminAcademicPage() {
                           </td>
                           <td className="px-4 py-3 text-center font-mono tabular-nums text-slate-700 hidden md:table-cell">
                             {c.total_sessions}
-                          </td>
-                          <td className="px-4 py-3 text-center">
-                            <button
-                              onClick={() => handleOpenStudentsModal(c)}
-                              className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded text-xs font-mono font-medium bg-emerald-50 text-emerald-700 border border-emerald-200 hover:bg-emerald-100 transition-colors cursor-pointer"
-                            >
-                              <Users size={12} />
-                              <span className="tabular-nums">{c.student_count}</span> SV
-                            </button>
                           </td>
                           <td className="px-4 py-3 text-right">
                             <div className="flex items-center justify-end gap-1.5">
@@ -1468,20 +1470,21 @@ export default function AdminAcademicPage() {
                         <th className="px-3 py-2">Lớp SH</th>
                         <th className="px-3 py-2">Chuyên ngành</th>
                         <th className="px-3 py-2 text-center">Điểm RL</th>
+                        <th className="px-3 py-2 text-center">Xếp loại</th>
                         <th className="px-3 py-2 text-right">Xóa</th>
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-slate-100 text-xs text-slate-700">
                       {isLoadingStudents ? (
                         <tr>
-                          <td colSpan={7} className="px-4 py-8 text-center text-slate-400">
+                          <td colSpan={8} className="px-4 py-8 text-center text-slate-400">
                             <Loader2 size={20} className="animate-spin mx-auto text-slate-400 mb-1" />
                             Đang tải danh sách...
                           </td>
                         </tr>
                       ) : visibleStudents.length === 0 ? (
                         <tr>
-                          <td colSpan={7} className="px-4 py-8 text-center text-slate-400">
+                          <td colSpan={8} className="px-4 py-8 text-center text-slate-400">
                             Không tìm thấy sinh viên phù hợp
                           </td>
                         </tr>
@@ -1504,7 +1507,19 @@ export default function AdminAcademicPage() {
                               {st.major || "-"}
                             </td>
                             <td className="px-3 py-2 text-center font-mono tabular-nums text-emerald-700 font-semibold">
-                              {st.total_point ?? 100}đ
+                              {st.total_point ?? (st.is_officer ? 100 : 95)}đ
+                            </td>
+                            <td className="px-3 py-2 text-center">
+                              {(() => {
+                                const rank = getConductRank(st.total_point ?? (st.is_officer ? 100 : 95), null, st.is_officer);
+                                return (
+                                  <span
+                                    className={`inline-flex items-center px-2 py-0.5 rounded text-[11px] font-semibold border ${rank.color}`}
+                                  >
+                                    {rank.label}
+                                  </span>
+                                );
+                              })()}
                             </td>
                             <td className="px-3 py-2 text-right">
                               <button
@@ -1553,6 +1568,18 @@ export default function AdminAcademicPage() {
           }}
           classes={classes}
           initialSchedule={editingSchedule}
+        />
+        <ScheduleBulkModal
+          isOpen={isBulkModalOpen}
+          onClose={() => setIsBulkModalOpen(false)}
+          onSuccess={(info) => {
+            queryClient.invalidateQueries({ queryKey: ["admin-schedules"] });
+            setFeedbackMsg({
+              type: "success",
+              text: `Đã sinh ${info.created} buổi học` + (info.skipped > 0 ? `, bỏ qua ${info.skipped} ngày trùng` : ""),
+            });
+          }}
+          classes={classes}
         />
 
         {/* ===================================================================== */}

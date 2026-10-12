@@ -2,7 +2,7 @@
 
 1. `01_schema.sql` — base schema
 2. `02_seed.sql` — roles, settings, demo accounts
-3. `03_migrate_existing_db.sql` — bring old DBs to 01 shape
+3. `03_migrate_existing_db.sql` — bring old DBs to 01 shape (+ is_officer)
 4. `04_enable_pgvector.sql` — `CREATE EXTENSION vector` (run BEFORE face tables)
 5. `04_face_tables.sql` — `face_embeddings`, `face_events`
 6. `05_recognition_v2.sql` — recognition v2 columns

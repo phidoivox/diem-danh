@@ -23,6 +23,7 @@ export interface OverrideTarget {
   currentStatus: string;
   scheduleId?: number | null;
   currentNote?: string;
+  currentHasUniform?: boolean;
 }
 
 interface ManualOverrideModalProps {
@@ -83,6 +84,7 @@ export function ManualOverrideModal({
 }: ManualOverrideModalProps) {
   const [selectedStatus, setSelectedStatus] = useState<string>("PRESENT");
   const [note, setNote] = useState<string>("");
+  const [hasUniform, setHasUniform] = useState<boolean>(true);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const queryClient = useQueryClient();
 
@@ -93,12 +95,14 @@ export function ManualOverrideModal({
       note: string;
       scheduleId?: number | null;
       studentId: number;
+      hasUniform: boolean;
     }) =>
       manualOverrideAttendance(payload.attendanceId, {
         status: payload.status,
         note: payload.note,
         schedule_id: payload.scheduleId || undefined,
         student_id: payload.studentId,
+        has_uniform: payload.hasUniform,
       }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["teacher-live"] });
@@ -118,6 +122,7 @@ export function ManualOverrideModal({
       // eslint-disable-next-line react-hooks/set-state-in-effect -- đồng bộ form từ target prop khi mở/đổi target
       setSelectedStatus(target.currentStatus || "PRESENT");
       setNote(target.currentNote || "");
+      setHasUniform(target.currentHasUniform ?? true);
       setErrorMessage(null);
     }
   }, [target]);
@@ -135,6 +140,7 @@ export function ManualOverrideModal({
       note: note.trim(),
       scheduleId: target.scheduleId || undefined,
       studentId: target.studentId,
+      hasUniform,
     });
   };
 
@@ -276,6 +282,23 @@ export function ManualOverrideModal({
             <div className="flex justify-between text-[11px] text-slate-400 mt-0.5">
               <span>Lưu vào lịch sử đối soát học vụ</span>
               <span className="font-mono tabular-nums">{note.length}/250</span>
+            </div>
+          </div>
+
+          {/* Uniform Toggle */}
+          <div>
+            <label className="block text-xs font-semibold text-slate-700 uppercase tracking-wider mb-1.5">
+              Đồng phục
+            </label>
+            <div className="flex gap-2">
+              <label className={`flex-1 flex items-center justify-center gap-2 p-2 rounded-lg border text-xs cursor-pointer transition-all ${hasUniform ? "border-emerald-500 bg-emerald-50/50 ring-1 ring-emerald-500 font-medium text-slate-900" : "border-slate-200 hover:border-slate-300 text-slate-600"}`}>
+                <input type="radio" name="override_uniform" checked={hasUniform} onChange={() => setHasUniform(true)} className="h-3.5 w-3.5" />
+                Đúng đồng phục
+              </label>
+              <label className={`flex-1 flex items-center justify-center gap-2 p-2 rounded-lg border text-xs cursor-pointer transition-all ${!hasUniform ? "border-amber-500 bg-amber-50/50 ring-1 ring-amber-500 font-medium text-slate-900" : "border-slate-200 hover:border-slate-300 text-slate-600"}`}>
+                <input type="radio" name="override_uniform" checked={!hasUniform} onChange={() => setHasUniform(false)} className="h-3.5 w-3.5" />
+                Vi phạm
+              </label>
             </div>
           </div>
 

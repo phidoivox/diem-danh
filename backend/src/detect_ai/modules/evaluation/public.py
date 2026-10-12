@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from .application.nightly import run_nightly_evaluation
+from .domain.conduct_rank import classify_conduct
 from .domain.exam_ban import HALF_ABSENT_WEIGHT, converted_absent
 from .domain.policy import decide_attendance
 from .infrastructure.models import PointLedger  # noqa: F401
@@ -8,6 +9,7 @@ from .infrastructure.models import PointLedger  # noqa: F401
 __all__ = [
     "HALF_ABSENT_WEIGHT",
     "PointLedger",
+    "classify_conduct",
     "converted_absent",
     "decide_attendance",
     "run_nightly_evaluation",

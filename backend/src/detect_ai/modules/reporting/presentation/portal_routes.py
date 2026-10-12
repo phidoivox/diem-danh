@@ -11,7 +11,7 @@ from sqlalchemy.orm import selectinload
 from detect_ai.shared.kernel.deps import get_db
 from detect_ai.modules.academic.public import Class, ClassStudent, Schedule
 from detect_ai.modules.attendance.public import Attendance, AttendanceStatus
-from detect_ai.modules.evaluation.public import PointLedger
+from detect_ai.modules.evaluation.public import PointLedger, classify_conduct
 from detect_ai.modules.identity.public import StudentProfile, User, require_role
 
 router = APIRouter(prefix="/api/v1/student", tags=["student-portal"])
@@ -66,6 +66,8 @@ class ConductLedgerEntry(BaseModel):
 
 class StudentConductLedgerResponse(BaseModel):
     total_point: int
+    conduct_rank: str
+    is_officer: bool = False
     items: List[ConductLedgerEntry]
 
 
@@ -152,7 +154,7 @@ async def get_student_attendance(
                 has_uniform=att.has_uniform,
                 status=status_val,
                 note=att.note,
-                snapshot_url=None,
+                snapshot_url=att.check_in_snapshot_url or att.check_out_snapshot_url,
             )
         )
     return items
@@ -167,15 +169,20 @@ async def get_student_conduct_ledger(
     current_user: User = Depends(require_role("STUDENT")),
     db: AsyncSession = Depends(get_db),
 ):
-    # Lấy điểm hiện tại từ student_profiles
+    # Lấy điểm hiện tại từ student_profiles (mặc định SV 95, cán sự 100).
     total_point = 100
+    is_officer = False
     sp_stmt = select(StudentProfile).where(StudentProfile.user_id == current_user.id)
     sp_res = await db.execute(sp_stmt)
     profile = sp_res.scalar_one_or_none()
     if profile:
-        total_point = profile.total_point
+        is_officer = bool(profile.is_officer)
+        total_point = profile.total_point if profile.total_point is not None else (100 if is_officer else 95)
     elif current_user.student_profile:
+        is_officer = bool(getattr(current_user.student_profile, "is_officer", False))
         total_point = current_user.student_profile.total_point
+        if total_point is None:
+            total_point = 100 if is_officer else 95
 
     # Lấy sổ cái biến động điểm
     ledger_stmt = (
@@ -200,5 +207,7 @@ async def get_student_conduct_ledger(
 
     return StudentConductLedgerResponse(
         total_point=total_point,
+        conduct_rank=classify_conduct(total_point, is_officer),
+        is_officer=is_officer,
         items=items,
     )

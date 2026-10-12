@@ -46,7 +46,8 @@ CREATE TABLE IF NOT EXISTS administrative_classes (
 CREATE TABLE IF NOT EXISTS student_profiles (
     id SERIAL PRIMARY KEY,
     user_id INT UNIQUE NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-    total_point INT NOT NULL DEFAULT 100,
+    total_point INT NOT NULL DEFAULT 95 CHECK (total_point >= 0 AND total_point <= 100),
+    is_officer BOOLEAN NOT NULL DEFAULT FALSE,
     admin_class_id INT NULL REFERENCES administrative_classes(id) ON DELETE SET NULL,
     class_name VARCHAR(100) NOT NULL DEFAULT '',
     major VARCHAR(100) NOT NULL DEFAULT ''

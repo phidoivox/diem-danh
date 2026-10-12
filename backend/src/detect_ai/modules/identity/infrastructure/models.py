@@ -3,6 +3,7 @@ from datetime import datetime
 from typing import TYPE_CHECKING, List, Optional
 from sqlalchemy import (
     Boolean,
+    CheckConstraint,
     DateTime,
     ForeignKey,
     Integer,
@@ -102,9 +103,18 @@ class StudentProfile(Base):
         nullable=False,
         index=True,
     )
-    total_point: Mapped[int] = mapped_column(Integer, default=100, nullable=False)
+    total_point: Mapped[int] = mapped_column(Integer, default=95, nullable=False)
+    is_officer: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    admin_class_id: Mapped[int | None] = mapped_column(
+        Integer, ForeignKey("administrative_classes.id", ondelete="SET NULL"),
+        nullable=True, index=True, default=None,
+    )
     class_name: Mapped[str] = mapped_column(String(100), default="", nullable=False)
     major: Mapped[str] = mapped_column(String(100), default="", nullable=False)
+
+    __table_args__ = (
+        CheckConstraint("total_point >= 0 AND total_point <= 100", name="ck_student_profiles_total_point_0_100"),
+    )
 
     user: Mapped[User] = relationship("User", back_populates="student_profile", lazy="selectin")
 

@@ -4,6 +4,7 @@ import React from "react";
 import { useQuery } from "@tanstack/react-query";
 import {
   getStudentAttendanceHistory,
+  getAdminStudentAttendanceHistory,
 } from "@/features/shell";
 import { AuthedSnapshotImg } from "@/features/shell";
 import { formatTime as formatTimeVN } from "@/features/shell";
@@ -32,6 +33,8 @@ interface AttendanceHistoryModalProps {
   onClose: () => void;
   classId: number | null;
   target: HistoryTarget | null;
+  /** Admin dùng endpoint admin (teacher mặc định). */
+  scope?: "teacher" | "admin";
 }
 
 function renderStatusBadge(status: string) {
@@ -114,10 +117,14 @@ export function AttendanceHistoryModal({
   onClose,
   classId,
   target,
+  scope = "teacher",
 }: AttendanceHistoryModalProps) {
   const historyQuery = useQuery({
-    queryKey: ["teacher-student-history", classId, target?.studentId],
-    queryFn: () => getStudentAttendanceHistory(classId!, target!.studentId),
+    queryKey: [`${scope}-student-history`, classId, target?.studentId],
+    queryFn: () =>
+      scope === "admin"
+        ? getAdminStudentAttendanceHistory(classId!, target!.studentId)
+        : getStudentAttendanceHistory(classId!, target!.studentId),
     enabled: isOpen && !!classId && !!target,
   });
   const data = historyQuery.data ?? null;
@@ -218,7 +225,7 @@ export function AttendanceHistoryModal({
                     <th className="px-4 py-2.5 text-center whitespace-nowrap">Ảnh ra</th>
                     <th className="px-4 py-2.5 text-center whitespace-nowrap">Đồng phục</th>
                     <th className="px-4 py-2.5 text-center whitespace-nowrap">Trạng thái</th>
-                    <th className="px-4 py-2.5 text-center whitespace-nowrap">Điểm bị trừ</th>
+                    <th className="px-4 py-2.5 text-center whitespace-nowrap">Điểm</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100 text-slate-700">

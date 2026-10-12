@@ -68,6 +68,12 @@ async def _auth_teacher(token: str | None, protocols: str | None = None) -> User
 
 @router.websocket("/api/v1/kiosk/ws")
 async def kiosk_ws(ws: WebSocket):
+    from detect_ai.shared.kernel.rate_limit import check_ws_allowed
+    try:
+        check_ws_allowed(None, ws.client)
+    except Exception:
+        await ws.close(code=4429)
+        return
     await ws.accept()
     cfg = public.get_config()
     params = ws.query_params

@@ -1,36 +1,89 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# Frontend - Detect AI (Giao diện Quản trị & Điểm danh Lớp học)
 
-## Getting Started
+Ứng dụng Web dành cho Sinh viên, Giảng viên và Quản trị viên của Hệ thống Quản lý Lớp học Thông minh Detect AI.
 
-First, run the development server:
+Xây dựng trên nền tảng **Next.js 16 (App Router)**, **React 19**, **Tailwind CSS v4**, và **TanStack Query**.
 
+---
+
+## 1. Yêu cầu hệ thống
+
+* **Node.js**: Phiên bản `>= 18.18.0` (Khuyến nghị Node 20 LTS)
+* **Trình quản lý gói**: `npm`, `pnpm` hoặc `yarn`
+
+---
+
+## 2. Hướng dẫn cài đặt & Khởi chạy
+
+### Bước 1: Di chuyển vào thư mục frontend
 ```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
+cd frontend
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+### Bước 2: Cài đặt thư viện dependencies
+```bash
+npm install
+```
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+### Bước 3: Cấu hình biến môi trường
+Tạo file `.env.local` từ mẫu `.env.example`:
+```bash
+cp .env.example .env.local
+```
+Nội dung file `.env.local`:
+```env
+NEXT_PUBLIC_API=http://localhost:8000
+```
+*(Thay thế bằng địa chỉ IP / Domain thực tế của máy chủ Backend nếu triển khai phân tán).*
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+### Bước 4: Khởi chạy môi trường phát triển (Development)
+```bash
+npm run dev
+```
+Mở trình duyệt tại: `http://localhost:3000`
 
-## Learn More
+---
 
-To learn more about Next.js, take a look at the following resources:
+## 3. Đóng gói cho môi trường Production
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+### Biên dịch ứng dụng:
+```bash
+npm run build
+```
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+### Khởi chạy ứng dụng production:
+```bash
+npm run start -p 3000
+```
 
-## Deploy on Vercel
+---
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+## 4. Kiểm tra mã nguồn (Linting)
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+Kiểm tra cú pháp và quy chuẩn React/Next.js:
+```bash
+npm run lint
+```
+
+---
+
+## 5. Cấu trúc thư mục
+
+```text
+frontend/
+├── app/                  # Next.js App Router (Routing, Layouts, Pages theo role)
+│   ├── admin/            # Trang Quản trị: Users, Academic, Reports, Settings, Conduct
+│   ├── teacher/          # Trang Giảng viên: Classes, Live Kiosk, Leave Reviews, Reports
+│   ├── student/          # Trang Sinh viên: Schedule, Attendance, Conduct Points, Leave
+│   └── login/            # Trang Đăng nhập hệ thống
+├── features/             # Các Feature Modules tự quản (Hexagonal/Modular UI pattern)
+│   ├── academic/         # Quản lý môn học, lớp và xếp lịch hàng loạt
+│   ├── attendance/       # Điểm danh trực tiếp, modal ghi đè thủ công, lịch sử ca học
+│   ├── evaluation/       # Điểm rèn luyện, xếp loại hạnh kiểm, trang chủ nhiệm
+│   ├── identity/         # Modal import sinh viên từ Excel, quản lý tài khoản
+│   ├── leave/            # Nộp đơn nghỉ phép, xem ảnh minh chứng
+│   ├── recognition/      # Giao diện camera Kiosk, phát hiện mặt, kết nối WebSocket
+│   ├── reporting/        # Báo cáo chuyên cần, cấm thi và xuất Excel
+│   └── shell/            # Layout chung, Sidebar, Topbar, Auth Context, Data Table
+└── public/               # Static assets, icons
+```

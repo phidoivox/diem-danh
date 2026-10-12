@@ -6,7 +6,9 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
+from fastapi import Request
 from detect_ai.shared.kernel.deps import get_db
+from detect_ai.shared.kernel.rate_limit import check_login_allowed, record_login_attempt
 from ..application.login import (
     AccountLockedError,
     InvalidCredentialsError,
@@ -50,8 +52,11 @@ class SqlAlchemyUserLookup:
 @router.post("/login", response_model=LoginResponse)
 async def login(
     req: LoginRequest,
+    request: Request,
     s: AsyncSession = Depends(get_db),
 ):
+    acct_key = req.user_code_or_email.strip().lower()
+    check_login_allowed(request, acct_key)
     lookup = SqlAlchemyUserLookup(s)
     try:
         token, user = await login_use_case(
@@ -60,11 +65,13 @@ async def login(
             req.password,
         )
     except AccountLockedError:
+        record_login_attempt(request, acct_key)
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Tài khoản đã bị khóa",
         )
     except InvalidCredentialsError:
+        record_login_attempt(request, acct_key)
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Tài khoản hoặc mật khẩu không chính xác",

@@ -1,7 +1,13 @@
 from typing import Optional
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from .infrastructure.models import Class, ClassStudent, Course, Schedule  # noqa: F401
+from .infrastructure.models import (  # noqa: F401
+    AdministrativeClass,
+    Class,
+    ClassStudent,
+    Course,
+    Schedule,
+)
 
 
 async def get_schedule(session: AsyncSession, schedule_id: int):
@@ -15,6 +21,7 @@ async def get_class(session: AsyncSession, class_id: int):
 
 
 __all__ = [
+    "AdministrativeClass",
     "Class",
     "ClassStudent",
     "Course",

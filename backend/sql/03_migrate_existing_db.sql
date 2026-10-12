@@ -104,7 +104,28 @@ CREATE UNIQUE INDEX IF NOT EXISTS uq_leave_requests_active
 
 
 -- ---------------------------------------------------------------------
--- 5. (TUỲ CHỌN) Dọn bảng của lớp legacy đã xoá khỏi mã nguồn.
+-- 5. Cờ ban cán sự (student_profiles.is_officer)
+--    DB tạo trước bản thêm cột này thì login vỡ 500 (UndefinedColumnError).
+--    App đã tự vá lúc khởi động, nhưng chạy tay SQL này nếu muốn fix ngay.
+-- ---------------------------------------------------------------------
+ALTER TABLE student_profiles
+    ADD COLUMN IF NOT EXISTS is_officer BOOLEAN NOT NULL DEFAULT FALSE;
+
+-- Đổi default điểm khởi đầu: SV 95, cán sự tạo mới 100 (do app quyết lúc insert).
+ALTER TABLE student_profiles ALTER COLUMN total_point SET DEFAULT 95;
+
+
+-- ---------------------------------------------------------------------
+-- 6. Hạ điểm hàng loạt non-officer đang 100 về 85.
+--    Chỉ chạy 1 lần sau khi tick cán sự xong. Ledger KHÔNG ghi bù để giữ
+--    lịch sử; total_point mới = 85, lần chấm sau cộng dồn từ 85.
+-- ---------------------------------------------------------------------
+-- UPDATE student_profiles SET total_point = 85
+-- WHERE COALESCE(is_officer, FALSE) = FALSE AND total_point = 100;
+
+
+-- ---------------------------------------------------------------------
+-- 7. (TUỲ CHỌN) Dọn bảng của lớp legacy đã xoá khỏi mã nguồn.
 --    3 bảng này không còn model nào ánh xạ tới. Bỏ comment nếu muốn xoá hẳn.
 --    Thứ tự quan trọng: legacy_attendance tham chiếu students.
 -- ---------------------------------------------------------------------

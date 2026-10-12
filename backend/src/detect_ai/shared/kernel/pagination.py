@@ -18,8 +18,10 @@ async def paginate_stmt(
     routes_admin_academic, routes_leave_requests. Giữ nguyên shape response
     `{items, total, page, size}` nên frontend không phải đổi.
     """
+    # Trần 500 khớp mọi Query(le=500) khai báo ở routes (users/classes/courses/admin-classes).
+    # Helper cũ kẹp 100 nên FE xin size=500 (dropdown lớp SH) lặng lẽ mất dữ liệu.
     page = max(1, int(page or 1))
-    size = min(100, max(1, int(size or 20)))
+    size = min(500, max(1, int(size or 20)))
     total = (await s.execute(select(func.count()).select_from(stmt.subquery()))).scalar() or 0
     rows = (await s.execute(stmt.offset((page - 1) * size).limit(size))).scalars().all()
     return rows, int(total)

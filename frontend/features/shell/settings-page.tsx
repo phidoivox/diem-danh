@@ -8,6 +8,7 @@ import {
   getAdminSettings,
   updateAdminSettings,
   triggerNightlyEvaluation,
+  sendTestEmail,
   EvaluationResult,
 } from "./http";
 import { toast } from "sonner";
@@ -23,8 +24,18 @@ import {
   Award,
   Sliders,
   Calendar,
+  Mail,
   Loader2,
 } from "lucide-react";
+
+type SettingsTab = "points" | "academic" | "email" | "auto";
+
+const TABS: { id: SettingsTab; label: string; icon: typeof Award }[] = [
+  { id: "points", label: "Điểm chuyên cần", icon: Award },
+  { id: "academic", label: "Học vụ & Cấm thi", icon: Sliders },
+  { id: "email", label: "Email", icon: Mail },
+  { id: "auto", label: "Tự động 23h59", icon: Play },
+];
 
 export default function AdminSettingsPage() {
   const queryClient = useQueryClient();
@@ -43,6 +54,23 @@ export default function AdminSettingsPage() {
   const [checkoutMinGapMinutes, setCheckoutMinGapMinutes] = useState("5");
   const [maxAbsencePercentExamBan, setMaxAbsencePercentExamBan] = useState("20");
   const [warningAbsencePercent, setWarningAbsencePercent] = useState("15");
+
+  const [emailEnabled, setEmailEnabled] = useState(true);
+  const [emailReminder, setEmailReminder] = useState(true);
+  const [emailWarning, setEmailWarning] = useState(true);
+  const [emailBan, setEmailBan] = useState(true);
+  const [smtpEnabled, setSmtpEnabled] = useState(false);
+  const [smtpHost, setSmtpHost] = useState("");
+  const [smtpPort, setSmtpPort] = useState("587");
+  const [smtpUser, setSmtpUser] = useState("");
+  const [smtpPassword, setSmtpPassword] = useState("");
+  const [smtpFrom, setSmtpFrom] = useState("");
+  const [smtpUseTls, setSmtpUseTls] = useState(true);
+  const [smtpTimeout, setSmtpTimeout] = useState("10");
+  const [testTo, setTestTo] = useState("");
+  const [testMsg, setTestMsg] = useState<string | null>(null);
+  const [isTesting, setIsTesting] = useState(false);
+  const [activeTab, setActiveTab] = useState<SettingsTab>("points");
 
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
@@ -78,6 +106,24 @@ export default function AdminSettingsPage() {
     if (map["MAX_ABSENCE_PERCENT_EXAM_BAN"])
       setMaxAbsencePercentExamBan(map["MAX_ABSENCE_PERCENT_EXAM_BAN"]);
     if (map["WARNING_ABSENCE_PERCENT"]) setWarningAbsencePercent(map["WARNING_ABSENCE_PERCENT"]);
+    if (map["EMAIL_ENABLED"] !== undefined)
+      setEmailEnabled(map["EMAIL_ENABLED"].toLowerCase() === "true");
+    if (map["EMAIL_REMINDER_ENABLED"] !== undefined)
+      setEmailReminder(map["EMAIL_REMINDER_ENABLED"].toLowerCase() === "true");
+    if (map["EMAIL_WARNING_ENABLED"] !== undefined)
+      setEmailWarning(map["EMAIL_WARNING_ENABLED"].toLowerCase() === "true");
+    if (map["EMAIL_BAN_ENABLED"] !== undefined)
+      setEmailBan(map["EMAIL_BAN_ENABLED"].toLowerCase() === "true");
+    if (map["SMTP_ENABLED"] !== undefined)
+      setSmtpEnabled(map["SMTP_ENABLED"].toLowerCase() === "true");
+    if (map["SMTP_HOST"] !== undefined) setSmtpHost(map["SMTP_HOST"]);
+    if (map["SMTP_PORT"] !== undefined) setSmtpPort(map["SMTP_PORT"]);
+    if (map["SMTP_USER"] !== undefined) setSmtpUser(map["SMTP_USER"]);
+    if (map["SMTP_FROM"] !== undefined) setSmtpFrom(map["SMTP_FROM"]);
+    if (map["SMTP_USE_TLS"] !== undefined)
+      setSmtpUseTls(map["SMTP_USE_TLS"].toLowerCase() === "true");
+    if (map["SMTP_TIMEOUT_S"] !== undefined) setSmtpTimeout(map["SMTP_TIMEOUT_S"]);
+    setSmtpPassword("");
     /* eslint-enable react-hooks/set-state-in-effect */
   }, [settingsQuery.data]);
 
@@ -94,6 +140,7 @@ export default function AdminSettingsPage() {
   const saveMutation = useMutation({
     mutationFn: (payload: Record<string, string>) => updateAdminSettings(payload),
     onSuccess: () => {
+      setSmtpPassword("");
       queryClient.invalidateQueries({ queryKey: ["admin-settings"] });
       toast.success("Toàn bộ tham số cấu hình đã được cập nhật đồng bộ vào hệ thống.");
     },
@@ -135,6 +182,18 @@ export default function AdminSettingsPage() {
       CHECKOUT_MIN_GAP_MINUTES: String(checkoutMinGapMinutes),
       MAX_ABSENCE_PERCENT_EXAM_BAN: String(maxAbsencePercentExamBan),
       WARNING_ABSENCE_PERCENT: String(warningAbsencePercent),
+      EMAIL_ENABLED: String(emailEnabled),
+      EMAIL_REMINDER_ENABLED: String(emailReminder),
+      EMAIL_WARNING_ENABLED: String(emailWarning),
+      EMAIL_BAN_ENABLED: String(emailBan),
+      SMTP_ENABLED: String(smtpEnabled),
+      SMTP_HOST: smtpHost.trim(),
+      SMTP_PORT: String(smtpPort),
+      SMTP_USER: smtpUser.trim(),
+      SMTP_FROM: smtpFrom.trim(),
+      SMTP_USE_TLS: String(smtpUseTls),
+      SMTP_TIMEOUT_S: String(smtpTimeout),
+      ...(smtpPassword ? { SMTP_PASSWORD: smtpPassword } : {}),
     };
 
     saveMutation.mutate(payload);
@@ -145,6 +204,20 @@ export default function AdminSettingsPage() {
     setEvalError(null);
     setEvalResult(null);
     evalMutation.mutate(targetDate || undefined);
+  };
+
+  const handleSendTest = async () => {
+    if (!testTo.trim()) return setTestMsg("Nhập email nhận test.");
+    setIsTesting(true);
+    setTestMsg(null);
+    try {
+      const r = await sendTestEmail(testTo.trim());
+      setTestMsg(r?.ok ? "Đã gửi mail test." : `Không gửi được: ${JSON.stringify(r)}`);
+    } catch (e) {
+      setTestMsg(e instanceof Error ? e.message : "Lỗi gửi mail test");
+    } finally {
+      setIsTesting(false);
+    }
   };
 
   return (
@@ -202,8 +275,31 @@ export default function AdminSettingsPage() {
             <span className="text-xs">Đang nạp tham số hệ thống...</span>
           </div>
         ) : (
-          <form onSubmit={handleSaveSettings} className="space-y-4 sm:space-y-6">
-            {/* SECTION 1: ATTENDANCE CONDUCT POINTS */}
+          <form onSubmit={handleSaveSettings} className="space-y-4">
+            {/* Tab bar */}
+            <div className="flex gap-1 p-1 bg-slate-100 rounded-lg border border-slate-200 overflow-x-auto">
+              {TABS.map((t) => {
+                const Icon = t.icon;
+                const active = activeTab === t.id;
+                return (
+                  <button
+                    key={t.id}
+                    type="button"
+                    onClick={() => setActiveTab(t.id)}
+                    className={`flex items-center gap-1.5 px-3 py-2 min-h-[36px] text-xs font-medium rounded-md whitespace-nowrap transition-colors cursor-pointer ${
+                      active
+                        ? "bg-white text-slate-900 shadow-xs border border-slate-200"
+                        : "text-slate-500 hover:text-slate-800"
+                    }`}
+                  >
+                    <Icon size={14} />
+                    <span>{t.label}</span>
+                  </button>
+                );
+              })}
+            </div>
+
+            {activeTab === "points" && (
             <div className="bg-white rounded-lg border border-slate-200 shadow-xs overflow-hidden">
               <div className="px-4 sm:px-6 py-4 border-b border-slate-200 bg-slate-50/50 flex items-center gap-2.5">
                 <div className="p-1.5 bg-emerald-50 text-emerald-700 border border-emerald-200 rounded-md">
@@ -316,8 +412,9 @@ export default function AdminSettingsPage() {
                 </div>
               </div>
             </div>
+            )}
 
-            {/* SECTION 2: ACADEMIC POLICIES & TOLERANCES */}
+            {activeTab === "academic" && (
             <div className="bg-white rounded-lg border border-slate-200 shadow-xs overflow-hidden">
               <div className="px-4 sm:px-6 py-4 border-b border-slate-200 bg-slate-50/50 flex items-center gap-2.5">
                 <div className="p-1.5 bg-indigo-50 text-indigo-700 border border-indigo-200 rounded-md">
@@ -432,8 +529,107 @@ export default function AdminSettingsPage() {
                 </div>
               </div>
             </div>
+            )}
 
-            {/* SECTION 3: NIGHTLY EVALUATION RUN-NOW */}
+            {activeTab === "email" && (
+            <div className="bg-white rounded-lg border border-slate-200 shadow-xs overflow-hidden">
+              <div className="px-4 sm:px-6 py-4 border-b border-slate-200 bg-slate-50/50">
+                <h3 className="text-sm font-semibold text-slate-900">
+                  Thông báo Email (lịch học, cảnh báo, cấm thi)
+                </h3>
+                <p className="text-xs text-slate-500">
+                  SMTP cấu hình tại đây, lưu database. Tắt gửi thật thì mail chạy log-only.
+                </p>
+              </div>
+              <div className="p-4 sm:p-6 grid grid-cols-1 sm:grid-cols-2 gap-4">
+                {[
+                  ["Bật gửi mail", emailEnabled, setEmailEnabled],
+                  ["Mail nhắc lịch học", emailReminder, setEmailReminder],
+                  ["Mail cảnh báo", emailWarning, setEmailWarning],
+                  ["Mail cấm thi", emailBan, setEmailBan],
+                ].map(([label, val, set]) => (
+                  <label key={label as string} className="flex items-center gap-2 text-xs text-slate-700">
+                    <input
+                      type="checkbox"
+                      checked={val as boolean}
+                      onChange={(e) => (set as (v: boolean) => void)(e.target.checked)}
+                      className="h-4 w-4 rounded border-slate-300 text-slate-900 cursor-pointer"
+                    />
+                    {label as string}
+                  </label>
+                ))}
+                <div className="sm:col-span-2 grid grid-cols-1 sm:grid-cols-2 gap-3 p-3 rounded-md border border-slate-200 bg-slate-50/40">
+                  <label className="flex items-center gap-2 text-xs text-slate-700 sm:col-span-2">
+                    <input
+                      type="checkbox"
+                      checked={smtpEnabled}
+                      onChange={(e) => setSmtpEnabled(e.target.checked)}
+                      className="h-4 w-4 rounded border-slate-300 text-slate-900 cursor-pointer"
+                    />
+                    Bật gửi SMTP thật
+                  </label>
+                  <div>
+                    <label className="block text-[11px] font-semibold text-slate-700 mb-1">SMTP host</label>
+                    <input value={smtpHost} onChange={(e) => setSmtpHost(e.target.value)} placeholder="smtp.gmail.com" className="w-full px-3 py-2 min-h-[38px] text-xs font-mono rounded-md border border-slate-200 bg-white" />
+                  </div>
+                  <div>
+                    <label className="block text-[11px] font-semibold text-slate-700 mb-1">Port</label>
+                    <input type="number" min={1} max={65535} value={smtpPort} onChange={(e) => setSmtpPort(e.target.value)} className="w-full px-3 py-2 min-h-[38px] text-xs font-mono rounded-md border border-slate-200 bg-white" />
+                  </div>
+                  <div>
+                    <label className="block text-[11px] font-semibold text-slate-700 mb-1">User đăng nhập</label>
+                    <input value={smtpUser} onChange={(e) => setSmtpUser(e.target.value)} placeholder="you@gmail.com" className="w-full px-3 py-2 min-h-[38px] text-xs font-mono rounded-md border border-slate-200 bg-white" />
+                  </div>
+                  <div>
+                    <label className="block text-[11px] font-semibold text-slate-700 mb-1">Mật khẩu / App password</label>
+                    <input type="password" value={smtpPassword} onChange={(e) => setSmtpPassword(e.target.value)} placeholder={settingsQuery.data?.has_smtp_password ? "•••••••• (để trống = giữ nguyên)" : "xxxx-xxxx-xxxx-xxxx"} className="w-full px-3 py-2 min-h-[38px] text-xs font-mono rounded-md border border-slate-200 bg-white" />
+                  </div>
+                  <div>
+                    <label className="block text-[11px] font-semibold text-slate-700 mb-1">Địa chỉ From</label>
+                    <input value={smtpFrom} onChange={(e) => setSmtpFrom(e.target.value)} placeholder="you@gmail.com" className="w-full px-3 py-2 min-h-[38px] text-xs font-mono rounded-md border border-slate-200 bg-white" />
+                  </div>
+                  <div>
+                    <label className="block text-[11px] font-semibold text-slate-700 mb-1">Timeout (giây)</label>
+                    <input type="number" min={1} max={120} value={smtpTimeout} onChange={(e) => setSmtpTimeout(e.target.value)} className="w-full px-3 py-2 min-h-[38px] text-xs font-mono rounded-md border border-slate-200 bg-white" />
+                  </div>
+                  <label className="flex items-center gap-2 text-xs text-slate-700 sm:col-span-2">
+                    <input
+                      type="checkbox"
+                      checked={smtpUseTls}
+                      onChange={(e) => setSmtpUseTls(e.target.checked)}
+                      className="h-4 w-4 rounded border-slate-300 text-slate-900 cursor-pointer"
+                    />
+                    Bật STARTTLS
+                  </label>
+                </div>
+                <div className="sm:col-span-2 flex flex-col sm:flex-row gap-2 items-stretch sm:items-end">
+                  <div className="flex-1">
+                    <label className="block text-[11px] font-semibold text-slate-700 mb-1">
+                      Email nhận test:
+                    </label>
+                    <input
+                      type="email"
+                      value={testTo}
+                      onChange={(e) => setTestTo(e.target.value)}
+                      placeholder="sv@student.edu.vn"
+                      className="w-full px-3 py-2 min-h-[38px] text-xs rounded-md border border-slate-200 bg-white"
+                    />
+                  </div>
+                  <button
+                    type="button"
+                    onClick={handleSendTest}
+                    disabled={isTesting}
+                    className="px-4 py-2 min-h-[38px] text-xs font-semibold text-white bg-slate-900 hover:bg-slate-800 rounded-md disabled:opacity-50 cursor-pointer"
+                  >
+                    {isTesting ? "Đang gửi..." : "Gửi mail test"}
+                  </button>
+                </div>
+                {testMsg && <p className="sm:col-span-2 text-xs text-slate-600">{testMsg}</p>}
+              </div>
+            </div>
+            )}
+
+            {activeTab === "auto" && (
             <div className="bg-white rounded-lg border border-slate-200 shadow-xs overflow-hidden">
               <div className="px-4 sm:px-6 py-4 border-b border-slate-200 bg-slate-50/50 flex flex-wrap items-center justify-between gap-2">
                 <div className="flex items-center gap-2.5">
@@ -525,6 +721,7 @@ export default function AdminSettingsPage() {
                 )}
               </div>
             </div>
+            )}
           </form>
         )}
       </div>

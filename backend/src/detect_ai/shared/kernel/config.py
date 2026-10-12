@@ -19,6 +19,20 @@ class Settings(BaseSettings):
     jwt_algorithm: str = "HS256"
     jwt_access_token_expire_minutes: int = 60 * 24
     kiosk_api_key: str = "kiosk-secret-key-2026"
+    trust_proxy: bool = False
+    login_rate_limit_per_account_per_minute: int = 10
+    login_rate_limit_per_ip_per_minute: int = 60
+    ws_connects_per_ip_per_minute: int = 20
+    # SMTP cấu hình trên database (system_settings, UI admin). Giữ env legacy
+    # fallback khi DB chưa seed — xóa hẳn khi mọi môi trường đã seed SMTP_*.
+    smtp_host: str = ""
+    smtp_port: int = 587
+    smtp_user: str = ""
+    smtp_password: str = ""
+    smtp_from: str = ""
+    smtp_use_tls: bool = True
+    smtp_enabled: bool = False
+    smtp_timeout_s: int = 10
 
     @property
     def jwt_expire_minutes(self) -> int:

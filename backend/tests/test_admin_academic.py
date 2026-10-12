@@ -200,6 +200,8 @@ async def test_admin_create_student_user(client: AsyncClient, seeded_data):
     assert data["student_profile"]["class_name"] == "CNTT-K24B"
     assert data["student_profile"]["major"] == "An toàn thông tin"
     assert "face_embedding" not in data.get("student_profile", {})
+    # Điểm khởi đầu SV thường = 95.
+    assert data["student_profile"]["total_point"] == 95
 
 
 @pytest.mark.asyncio

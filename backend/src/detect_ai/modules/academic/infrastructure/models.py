@@ -1,15 +1,18 @@
 from __future__ import annotations
 
-from datetime import date, time
-from typing import TYPE_CHECKING, List
+from datetime import date, datetime, time
+from typing import TYPE_CHECKING, List, Optional
 from sqlalchemy import (
     CheckConstraint,
     Date,
+    DateTime,
     ForeignKey,
     Index,
     Integer,
     String,
+    Text,
     Time,
+    func,
 )
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -30,6 +33,10 @@ class Course(Base):
     course_name: Mapped[str] = mapped_column(String(255), nullable=False)
     credits: Mapped[int] = mapped_column(Integer, default=3, nullable=False)
     default_sessions: Mapped[int] = mapped_column(Integer, default=15, nullable=False)
+    description: Mapped[str | None] = mapped_column(Text, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
 
     classes: Mapped[List[Class]] = relationship(
         "Class",
@@ -127,5 +134,26 @@ class Schedule(Base):
     )
 
 
-__all__ = ["Class", "ClassStudent", "Schedule"]
+class AdministrativeClass(Base):
+    __tablename__ = "administrative_classes"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    class_code: Mapped[str] = mapped_column(String(50), unique=True, nullable=False, index=True)
+    academic_year: Mapped[str] = mapped_column(String(50), default="", nullable=False)
+    faculty: Mapped[str] = mapped_column(String(100), default="", nullable=False)
+    homeroom_teacher_id: Mapped[Optional[int]] = mapped_column(
+        Integer, ForeignKey("users.id", ondelete="SET NULL"), nullable=True, index=True
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+
+    homeroom_teacher: Mapped[Optional["User"]] = relationship(
+        "User",
+        foreign_keys=[homeroom_teacher_id],
+        lazy="selectin",
+    )
+
+
+__all__ = ["AdministrativeClass", "Class", "ClassStudent", "Course", "Schedule"]
 

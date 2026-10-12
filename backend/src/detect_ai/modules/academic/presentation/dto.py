@@ -10,6 +10,8 @@ class ClassResponse(BaseModel):
 
     id: int
     class_code: str
+    course_id: int | None = None
+    course_code: str | None = None
     course_name: str
     teacher_id: int
     teacher_name: str = ""
@@ -25,4 +27,7 @@ def build_class_response(
     resp = ClassResponse.model_validate(c)
     resp.teacher_name = teacher_name
     resp.student_count = student_count
+    course = getattr(c, "course", None)
+    if course is not None:
+        resp.course_code = getattr(course, "course_code", None)
     return resp

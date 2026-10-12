@@ -34,6 +34,10 @@ backend/data/snapshots/*
 !backend/data/snapshots/.gitkeep
 backend/data/faces/*
 !backend/data/faces/.gitkeep
+backend/data/storage/*
+!backend/data/storage/.gitkeep
+backend/data/uniform/
+backend/data/*.json
 *.db
 *.db-shm
 *.db-wal
@@ -65,22 +69,24 @@ Thumbs.db
 *.pem
 *.key
 
-# Superpowers
+# Assistant & Tool configs
 .superpowers/
-
-# CodeGraph (local index, rebuild via `codegraph init`)
 .codegraph/
+.claude/
 
-# Local bench/weight artifacts (never source)
+# Local bench/weight artifacts, logs, tests (never source)
 backend/bench_*_out.txt
 backend/best.pt
 *.onnx
 pytest-of-vohoa/
 backend/pytest-of-vohoa/
 frontend/pytest-of-vohoa/
+pytest_out*.txt
+tmp*/
 *.log
 *.ipynb
+*.pdf
 .tmp_oldpaths.txt
 backend/bounds_raw.txt
-tmp9c/
 backend/colab_train_uniform.ipynb
+

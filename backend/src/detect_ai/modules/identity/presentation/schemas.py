@@ -23,6 +23,7 @@ class StudentProfileResponse(BaseModel):
     id: int
     user_id: int
     total_point: int
+    is_officer: bool = False
     class_name: str
     major: str
 
@@ -68,6 +69,7 @@ def serialize_user(user: Any) -> UserResponse:
             id=user.student_profile.id,
             user_id=user.student_profile.user_id,
             total_point=user.student_profile.total_point,
+            is_officer=bool(getattr(user.student_profile, "is_officer", False)),
             class_name=user.student_profile.class_name,
             major=user.student_profile.major,
         )

@@ -99,7 +99,7 @@ export async function downloadFile(url: string, fallbackName: string): Promise<v
 /** true khi URL là file qua API auth (avatar/minh chứng/snapshot) — bắt buộc đọc qua
  * fetch có Authorization, KHÔNG gắn trực tiếp vào <img src>/<a href>. */
 export function isPrivateFileUrl(url?: string | null): boolean {
-  return !!url && url.startsWith("/api/v1/files/");
+  return !!url && (url.startsWith("/api/v1/files/") || url.includes("/api/v1/files/"));
 }
 
 /** Fetch file riêng tư (/api/v1/files/*) có kèm token -> blob object URL.
@@ -136,6 +136,7 @@ export interface StudentProfile {
   id: number;
   user_id: number;
   total_point: number;
+  is_officer?: boolean;
   class_name: string;
   major: string;
 }
@@ -296,6 +297,8 @@ export interface ConductLedgerEntry {
 
 export interface StudentConductLedger {
   total_point: number;
+  conduct_rank?: string;
+  is_officer?: boolean;
   items: ConductLedgerEntry[];
 }
 
@@ -517,7 +520,7 @@ export async function getTeacherLiveAttendance(classId: number): Promise<LiveAtt
 
 export async function manualOverrideAttendance(
   attendanceId: number,
-  data: { status: string; note?: string; schedule_id?: number; student_id?: number }
+  data: { status: string; note?: string; schedule_id?: number; student_id?: number; has_uniform?: boolean }
 ): Promise<unknown> {
   return authFetch<unknown>(`/api/v1/teacher/attendance/${attendanceId}/manual-override`, {
     method: "PUT",
@@ -574,6 +577,50 @@ export async function getStudentAttendanceHistory(
 ): Promise<StudentHistoryResponse> {
   return authFetch<StudentHistoryResponse>(
     `/api/v1/teacher/classes/${classId}/students/${studentId}/attendance-history`
+  );
+}
+
+export interface HomeroomClass {
+  id: number;
+  class_code: string;
+  faculty?: string;
+}
+
+export interface HomeroomStudent {
+  id: number;
+  user_code: string;
+  full_name: string;
+  total_point: number;
+  is_officer: boolean;
+}
+
+export async function getTeacherHomeroomClasses(): Promise<HomeroomClass[]> {
+  return authFetch<HomeroomClass[]>("/api/v1/teacher/homeroom-classes");
+}
+
+export async function getTeacherHomeroomStudents(adminClassId: number): Promise<HomeroomStudent[]> {
+  return authFetch<HomeroomStudent[]>(
+    `/api/v1/teacher/homeroom-classes/${adminClassId}/students`
+  );
+}
+
+export async function setTeacherHomeroomOfficer(
+  adminClassId: number,
+  studentId: number,
+  isOfficer: boolean
+): Promise<{ ok: boolean; student_id: number; is_officer: boolean }> {
+  return authFetch<{ ok: boolean; student_id: number; is_officer: boolean }>(
+    `/api/v1/teacher/homeroom-classes/${adminClassId}/students/${studentId}/officer`,
+    { method: "PUT", body: JSON.stringify({ is_officer: isOfficer }) }
+  );
+}
+
+export async function getAdminStudentAttendanceHistory(
+  classId: number,
+  studentId: number
+): Promise<StudentHistoryResponse> {
+  return authFetch<StudentHistoryResponse>(
+    `/api/v1/admin/reports/classes/${classId}/students/${studentId}/attendance-history`
   );
 }
 
@@ -641,17 +688,6 @@ export async function getKioskGalleryStatus(classId: number): Promise<KioskGalle
   return authFetch<KioskGalleryStatus>(`/api/v1/kiosk/gallery-status?class_id=${classId}`);
 }
 
-export async function kioskBackfill(classId: number): Promise<{
-  class_id: number;
-  enrolled: number;
-  already: number;
-  failed: { user_code: string; reason: string }[];
-}> {
-  const form = new FormData();
-  form.append("class_id", String(classId));
-  return authFetch<{ class_id: number; enrolled: number; already: number; failed: { user_code: string; reason: string }[] }>("/api/v1/kiosk/backfill", { method: "POST", body: form });
-}
-
 export async function kioskResetSession(scheduleId: number): Promise<{ ok: boolean }> {
   const form = new FormData();
   form.append("schedule_id", String(scheduleId));
@@ -715,12 +751,64 @@ export async function downloadTeacherExamBanExcel(classId: number, filename?: st
 }
 
 // =====================================================================
+// Bảng điểm rèn luyện theo lớp (global + delta lớp + rank)
+// =====================================================================
+export interface ClassConductStudent {
+  student_id: number;
+  student_code: string;
+  full_name: string;
+  class_name?: string;
+  total_point: number;
+  is_officer?: boolean;
+  conduct_rank: string;
+  class_delta: number;
+  class_entries: number;
+}
+
+export interface ClassConductReport {
+  class_id: number;
+  class_code: string;
+  course_name: string;
+  evaluated_sessions: number;
+  total_sessions: number;
+  summary: { total: number; by_rank: Record<string, number> };
+  students: ClassConductStudent[];
+}
+
+export async function getTeacherClassConduct(classId: number, month?: string): Promise<ClassConductReport> {
+  const qs = buildQuery({ month });
+  return authFetch<ClassConductReport>(`/api/v1/teacher/classes/${classId}/conduct-points${qs}`);
+}
+
+export async function getAdminClassConduct(classId: number, month?: string): Promise<ClassConductReport> {
+  const qs = buildQuery({ month });
+  return authFetch<ClassConductReport>(`/api/v1/admin/reports/classes/${classId}/conduct-points${qs}`);
+}
+
+export async function downloadTeacherConductExcel(classId: number, month?: string, filename?: string): Promise<void> {
+  const qs = buildQuery({ month });
+  await downloadFile(
+    `/api/v1/teacher/classes/${classId}/export-conduct-excel${qs}`,
+    filename ?? `diem_ren_luyen_${classId}.xlsx`,
+  );
+}
+
+export async function downloadAdminConductExcel(classId: number, month?: string, filename?: string): Promise<void> {
+  const qs = buildQuery({ month });
+  await downloadFile(
+    `/api/v1/admin/reports/classes/${classId}/export-conduct-excel${qs}`,
+    filename ?? `diem_ren_luyen_${classId}.xlsx`,
+  );
+}
+
+// =====================================================================
 // ADMIN PORTAL API DEFINITIONS
 // =====================================================================
 export interface AdminStudentProfile {
   id: number;
   user_id: number;
   total_point: number;
+  is_officer?: boolean;
   admin_class_id?: number | null;
   class_name: string;
   major: string;
@@ -818,6 +906,7 @@ export interface StudentInClass {
   class_name?: string;
   major?: string;
   total_point?: number;
+  is_officer?: boolean;
 }
 
 export interface AdminSchedule {
@@ -844,6 +933,7 @@ export interface SystemSettingItem {
 export interface SystemSettingsResponse {
   settings: SystemSettingsMap;
   items: SystemSettingItem[];
+  has_smtp_password?: boolean;
 }
 
 export interface EvaluationResult {
@@ -913,18 +1003,30 @@ export async function uploadUserAvatar(
   );
 }
 
-/** Admin đăng ký thêm ảnh khuôn mặt (FaceID) cho SV — không đổi avatar hiển thị. */
-export async function kioskEnrollFace(
-  userId: number,
-  file: File
-): Promise<{ ok: boolean; user_id: number; embedding_id: number; quality: number }> {
-  const fd = new FormData();
-  fd.append("photo", file);
-  return authFetch<{ ok: boolean; user_id: number; embedding_id: number; quality: number }>(`/api/v1/kiosk/enroll/${userId}`, { method: "POST", body: fd });
-}
-
 export async function getStudentClassNames(): Promise<string[]> {
   return authFetch<string[]>("/api/v1/admin/users/class-names");
+}
+
+export interface StudentImportResult {
+  created: number;
+  skipped: number;
+  errors: { row: number; user_code: string; message: string }[];
+  default_password: string;
+}
+
+/** Nhập sinh viên hàng loạt từ file Excel (.xlsx). Mật khẩu mặc định 123456. */
+export async function importStudentsExcel(file: File): Promise<StudentImportResult> {
+  const fd = new FormData();
+  fd.append("file", file);
+  return authFetch<StudentImportResult>("/api/v1/admin/users/import-excel", {
+    method: "POST",
+    body: fd,
+  });
+}
+
+/** Tải file mẫu nhập sinh viên. */
+export async function downloadStudentImportTemplate(): Promise<void> {
+  await downloadFile("/api/v1/admin/users/import-excel/template", "mau_nhap_sinh_vien.xlsx");
 }
 
 /** Danh sách lớp sinh hoạt (mã lớp + sĩ số) cho dropdown chọn lớp khi tạo/sửa SV. */
@@ -1131,6 +1233,29 @@ export async function createAdminSchedule(data: Record<string, unknown>): Promis
   });
 }
 
+export interface AdminScheduleBulkRequest {
+  class_id: number;
+  room_name: string;
+  start_date: string;
+  start_time: string;
+  end_time: string;
+  weekdays: number[];
+  total_sessions: number;
+  start_session_order?: number;
+}
+
+export interface AdminScheduleBulkResponse {
+  created: AdminSchedule[];
+  skipped: { study_date: string; reason: string }[];
+}
+
+export async function createAdminSchedulesBulk(data: AdminScheduleBulkRequest): Promise<AdminScheduleBulkResponse> {
+  return authFetch<AdminScheduleBulkResponse>("/api/v1/admin/academic/schedules/bulk", {
+    method: "POST",
+    body: JSON.stringify(data),
+  });
+}
+
 export async function updateAdminSchedule(id: number, data: Record<string, unknown>): Promise<AdminSchedule> {
   return authFetch<AdminSchedule>(`/api/v1/admin/academic/schedules/${id}`, {
     method: "PUT",
@@ -1168,5 +1293,51 @@ export async function downloadAllSchoolExamBanExcel(
   filename = "danh_sach_cam_thi_toan_truong.xlsx"
 ): Promise<void> {
   await downloadFile("/api/v1/admin/reports/export-exam-ban-all-excel", filename);
+}
+
+// Notifications: test mail + gửi bù cảnh báo/cấm thi + nhắc lịch.
+export interface NotifyResult {
+  sent: number;
+  skipped: number;
+  failed: number;
+  disabled?: boolean;
+  [k: string]: unknown;
+}
+
+export async function sendTestEmail(to: string): Promise<{ ok: boolean } & Record<string, unknown>> {
+  return authFetch(`/api/v1/admin/reports/notifications/test`, {
+    method: "POST",
+    body: JSON.stringify({ to }),
+  });
+}
+
+export async function sendAdminExamWarnings(
+  classId: number,
+  data?: { only?: string; dry_run?: boolean }
+): Promise<NotifyResult> {
+  return authFetch<NotifyResult>(`/api/v1/admin/reports/classes/${classId}/send-exam-warnings`, {
+    method: "POST",
+    body: JSON.stringify({ only: data?.only ?? "all", dry_run: data?.dry_run ?? false }),
+  });
+}
+
+export async function sendTeacherExamWarnings(
+  classId: number,
+  data?: { only?: string; dry_run?: boolean }
+): Promise<NotifyResult> {
+  return authFetch<NotifyResult>(`/api/v1/teacher/classes/${classId}/send-exam-warnings`, {
+    method: "POST",
+    body: JSON.stringify({ only: data?.only ?? "all", dry_run: data?.dry_run ?? false }),
+  });
+}
+
+export async function sendScheduleReminder(
+  scheduleId: number,
+  dryRun = false
+): Promise<NotifyResult> {
+  return authFetch<NotifyResult>(`/api/v1/admin/academic/schedules/${scheduleId}/send-reminder`, {
+    method: "POST",
+    body: JSON.stringify({ dry_run: dryRun }),
+  });
 }
 

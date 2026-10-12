@@ -78,12 +78,15 @@ export function Sidebar({ open = false, onClose, onNavigate }: SidebarProps) {
   const teacherNav: NavItem[] = [
     { href: "/teacher/classes", label: "Lớp học phụ trách", icon: BookOpen },
     { href: "/teacher/leave-reviews", label: "Duyệt đơn nghỉ phép", icon: ClipboardCheck },
+    { href: "/teacher/conduct", label: "Điểm rèn luyện", icon: Award },
+    { href: "/teacher/homeroom", label: "Ban cán sự", icon: Users },
     { href: "/teacher/reports", label: "Báo cáo cấm thi", icon: AlertTriangle },
   ];
 
   const adminNav: NavItem[] = [
     { href: "/admin/users", label: "Quản lý người dùng", icon: Users },
     { href: "/admin/academic", label: "Lớp học & TKB", icon: Layers },
+    { href: "/admin/conduct", label: "Điểm rèn luyện", icon: Award },
     { href: "/admin/settings", label: "Cấu hình hệ thống", icon: Settings },
     { href: "/admin/reports", label: "Báo cáo toàn trường", icon: BarChart3 },
   ];

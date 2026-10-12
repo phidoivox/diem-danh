@@ -1,8 +1,11 @@
 from __future__ import annotations
 
+import io
+import re
+import unicodedata
 from datetime import datetime
-from typing import List, Optional
-from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile, status
+from typing import Any, Dict, List, Optional
+from fastapi import APIRouter, Depends, File, HTTPException, Query, Response, UploadFile, status
 from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy import func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -27,6 +30,8 @@ class StudentProfileDTO(BaseModel):
     id: int
     user_id: int
     total_point: int
+    is_officer: bool = False
+    admin_class_id: Optional[int] = None
     class_name: str
     major: str
 
@@ -71,8 +76,10 @@ class UserCreateRequest(BaseModel):
     role_name: str = Field(..., description="'ADMIN' | 'TEACHER' | 'STUDENT'")
 
     # StudentProfile fields
+    admin_class_id: Optional[int] = None
     class_name: Optional[str] = ""
     major: Optional[str] = ""
+    is_officer: Optional[bool] = None
 
     # TeacherProfile fields
     department: Optional[str] = ""
@@ -87,8 +94,10 @@ class UserUpdateRequest(BaseModel):
     is_active: Optional[bool] = None
 
     # StudentProfile fields
+    admin_class_id: Optional[int] = None
     class_name: Optional[str] = None
     major: Optional[str] = None
+    is_officer: Optional[bool] = None
 
     # TeacherProfile fields
     department: Optional[str] = None
@@ -104,6 +113,8 @@ def serialize_admin_user(user: User) -> AdminUserResponse:
             id=user.student_profile.id,
             user_id=user.student_profile.user_id,
             total_point=user.student_profile.total_point,
+            is_officer=bool(getattr(user.student_profile, "is_officer", False)),
+            admin_class_id=user.student_profile.admin_class_id,
             class_name=user.student_profile.class_name,
             major=user.student_profile.major,
         )
@@ -223,11 +234,25 @@ async def create_user(
 
     # Create profile
     if role_upper == "STUDENT":
+        admin_class = None
+        admin_class_id = body.admin_class_id
+        if admin_class_id is not None:
+            from detect_ai.modules.academic.public import AdministrativeClass
+
+            admin_class = await s.get(AdministrativeClass, admin_class_id)
+            if admin_class is None:
+                raise HTTPException(
+                    status_code=status.HTTP_404_NOT_FOUND,
+                    detail=f"Không tìm thấy lớp sinh hoạt có ID {admin_class_id}",
+                )
+        is_officer = bool(body.is_officer) if body.is_officer is not None else False
         student_prof = StudentProfile(
             user_id=new_user.id,
-            class_name=body.class_name or "",
+            admin_class_id=admin_class_id,
+            class_name=(body.class_name or (admin_class.class_code if admin_class else "")) or "",
             major=body.major or "",
-            total_point=100,
+            total_point=100 if is_officer else 95,
+            is_officer=is_officer,
         )
         s.add(student_prof)
     elif role_upper == "TEACHER":
@@ -298,10 +323,27 @@ async def update_user(
 
     # Update StudentProfile if student
     if user.student_profile:
+        if body.admin_class_id is not None:
+            if body.admin_class_id:
+                from detect_ai.modules.academic.public import AdministrativeClass
+
+                admin_class = await s.get(AdministrativeClass, body.admin_class_id)
+                if admin_class is None:
+                    raise HTTPException(
+                        status_code=status.HTTP_404_NOT_FOUND,
+                        detail=f"Không tìm thấy lớp sinh hoạt có ID {body.admin_class_id}",
+                    )
+                user.student_profile.admin_class_id = body.admin_class_id
+                if body.class_name is None:
+                    user.student_profile.class_name = admin_class.class_code
+            else:
+                user.student_profile.admin_class_id = None
         if body.class_name is not None:
             user.student_profile.class_name = body.class_name.strip()
         if body.major is not None:
             user.student_profile.major = body.major.strip()
+        if body.is_officer is not None:
+            user.student_profile.is_officer = body.is_officer
 
     # Update TeacherProfile if teacher
     if user.teacher_profile:
@@ -315,6 +357,203 @@ async def update_user(
     await s.commit()
     await s.refresh(user)
     return serialize_admin_user(user)
+
+
+@router.get("/class-names", response_model=List[str])
+async def list_class_names(s: AsyncSession = Depends(get_db)):
+    """Distinct class_name từ student_profiles cho dropdown tạo/sửa SV."""
+    rows = (
+        await s.execute(
+            select(StudentProfile.class_name)
+            .where(StudentProfile.class_name.is_not(None), StudentProfile.class_name != "")
+            .distinct()
+            .order_by(StudentProfile.class_name)
+        )
+    ).scalars().all()
+    return [r for r in rows if r]
+
+
+DEFAULT_STUDENT_PASSWORD = "123456"
+STUDENT_IMPORT_HEADERS = ["Mã Sinh Viên", "Họ và Tên", "Email", "Lớp Sinh Hoạt", "Chuyên Ngành"]
+
+# Alias header (đã chuẩn hoá: thường, bỏ dấu, chỉ giữ chữ+số) -> field.
+_STUDENT_IMPORT_ALIASES: Dict[str, str] = {}
+for _f, _aliases in {
+    "user_code": ["masinhvien", "msv", "masv", "mssv", "studentcode", "usercode", "ma"],
+    "full_name": ["hovaten", "hoten", "fullname", "ten", "studentname", "name"],
+    "email": ["email", "mail", "thudientu"],
+    "class_name": ["lopsinhhoat", "lop", "class", "classname", "lopsinhhoatlop"],
+    "major": ["chuyennganh", "nganh", "major", "khoanganh"],
+}.items():
+    for _a in _aliases:
+        _STUDENT_IMPORT_ALIASES[_a] = _f
+
+
+def _norm_header(value: Any) -> str:
+    """Chuẩn hoá tên cột: thường + bỏ dấu + chỉ giữ [a-z0-9]."""
+    if value is None:
+        return ""
+    text = unicodedata.normalize("NFD", str(value).strip().lower())
+    text = "".join(c for c in text if unicodedata.category(c) != "Mn")
+    return re.sub(r"[^a-z0-9]", "", text)
+
+
+def _find_student_header_row(values_rows: List[List[Any]]) -> Optional[int]:
+    """Tìm dòng header trong 10 dòng đầu (có mã SV + họ tên)."""
+    for idx, row in enumerate(values_rows[:10]):
+        fields = {_STUDENT_IMPORT_ALIASES.get(_norm_header(c)) for c in row}
+        fields.discard(None)
+        if {"user_code", "full_name"} <= fields:
+            return idx
+    return None
+
+
+def _build_student_import_template() -> bytes:
+    from openpyxl import Workbook
+    from openpyxl.styles import Alignment, Font, PatternFill
+
+    wb = Workbook()
+    ws = wb.active
+    ws.title = "Sinh vien"
+    header_fill = PatternFill(start_color="1E3A8A", end_color="1E3A8A", fill_type="solid")
+    header_font = Font(name="Calibri", size=11, bold=True, color="FFFFFF")
+    for col, h in enumerate(STUDENT_IMPORT_HEADERS, start=1):
+        cell = ws.cell(row=1, column=col, value=h)
+        cell.fill = header_fill
+        cell.font = header_font
+        cell.alignment = Alignment(horizontal="center", vertical="center")
+    for row in [
+        ("SV2026001", "Nguyễn Văn A", "sv2026001@student.edu.vn", "CNTT-K24A", "Kỹ thuật phần mềm"),
+        ("SV2026002", "Trần Thị B", "", "CNTT-K24A", "Trí tuệ nhân tạo"),
+    ]:
+        ws.append(row)
+    ws.column_dimensions["A"].width = 16
+    ws.column_dimensions["B"].width = 26
+    ws.column_dimensions["C"].width = 32
+    ws.column_dimensions["D"].width = 16
+    ws.column_dimensions["E"].width = 26
+    buf = io.BytesIO()
+    wb.save(buf)
+    return buf.getvalue()
+
+
+@router.get("/import-excel/template")
+async def download_student_import_template():
+    """Tải file mẫu nhập sinh viên (header chuẩn + 2 dòng ví dụ)."""
+    return Response(
+        content=_build_student_import_template(),
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={"Content-Disposition": 'attachment; filename="mau_nhap_sinh_vien.xlsx"'},
+    )
+
+
+@router.post("/import-excel")
+async def import_students_excel(
+    file: UploadFile = File(...),
+    s: AsyncSession = Depends(get_db),
+):
+    """Nhập sinh viên hàng loạt từ file Excel (.xlsx).
+
+    - Tự dò dòng header (alias Việt/Anh, không dấu vẫn nhận).
+    - Mật khẩu mặc định `123456` cho mọi tài khoản tạo mới.
+    - Email trống -> tự sinh `<mã-thường>@student.edu.vn`.
+    - Dòng trùng mã/email (trong DB hoặc trong file) -> bỏ qua, ghi vào `errors`.
+    """
+    filename = (file.filename or "").lower()
+    if not filename.endswith((".xlsx", ".xlsm")):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="File phải có định dạng .xlsx (hoặc .xlsm)",
+        )
+    raw = await file.read()
+    if not raw:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="File rỗng")
+    if len(raw) > 10 * 1024 * 1024:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="File vượt quá 10MB")
+    try:
+        from openpyxl import load_workbook
+        wb = load_workbook(io.BytesIO(raw), data_only=True, read_only=True)
+        ws = wb.active
+        values_rows: List[List[Any]] = list(ws.iter_rows(values_only=True))
+    except Exception:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Không đọc được file Excel")
+    if not values_rows:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="File Excel không có dữ liệu")
+    header_idx = _find_student_header_row(values_rows)
+    if header_idx is None:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Không tìm thấy dòng tiêu đề (cần ít nhất cột Mã sinh viên + Họ tên)",
+        )
+    col_of: Dict[str, int] = {}
+    for col, cell in enumerate(values_rows[header_idx]):
+        field = _STUDENT_IMPORT_ALIASES.get(_norm_header(cell))
+        if field and field not in col_of:
+            col_of[field] = col
+    try:
+        role_obj = (await s.execute(select(Role).where(Role.role_name == "STUDENT"))).scalar_one_or_none()
+    except Exception:
+        role_obj = None
+    if not role_obj:
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Chưa có vai trò STUDENT trong hệ thống")
+    try:
+        from detect_ai.modules.academic.public import AdministrativeClass
+        admin_classes = (await s.execute(select(AdministrativeClass))).scalars().all()
+        admin_by_code = {c.class_code.strip().upper(): c.id for c in admin_classes}
+    except Exception:
+        admin_by_code = {}
+    existing_codes = set((await s.execute(select(User.user_code))).scalars().all())
+    existing_emails = {e.lower() for e in (await s.execute(select(User.email))).scalars().all()}
+    seen_codes, seen_emails = set(), set()
+    created, errors = 0, []
+    EMAIL_RE = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
+    for offset, row in enumerate(values_rows[header_idx + 1:]):
+        excel_row = header_idx + offset + 2  # số dòng Excel (1-based)
+        get = lambda f: (str(row[col_of[f]]).strip() if f in col_of and row[col_of[f]] is not None else "")
+        code = get("user_code").upper()
+        name = get("full_name")
+        email = get("email").lower()
+        class_name = get("class_name").upper()
+        major = get("major")
+        if not code and not name and not email:
+            continue  # bỏ dòng trống
+        if not code or not name:
+            errors.append({"row": excel_row, "user_code": code, "message": "Thiếu mã sinh viên hoặc họ tên"})
+            continue
+        if not email:
+            email = f"{code.lower()}@student.edu.vn"
+        if not EMAIL_RE.match(email):
+            errors.append({"row": excel_row, "user_code": code, "message": f"Email '{email}' không hợp lệ"})
+            continue
+        if code in existing_codes or code in seen_codes:
+            errors.append({"row": excel_row, "user_code": code, "message": f"Mã '{code}' đã tồn tại"})
+            continue
+        if email in existing_emails or email in seen_emails:
+            errors.append({"row": excel_row, "user_code": code, "message": f"Email '{email}' đã tồn tại"})
+            continue
+        seen_codes.add(code)
+        seen_emails.add(email)
+        new_user = User(
+            user_code=code,
+            full_name=name,
+            email=email,
+            password_hash=get_password_hash(DEFAULT_STUDENT_PASSWORD),
+            role_id=role_obj.id,
+            is_active=True,
+        )
+        s.add(new_user)
+        await s.flush()
+        s.add(StudentProfile(
+            user_id=new_user.id,
+            admin_class_id=admin_by_code.get(class_name) if class_name else None,
+            class_name=class_name,
+            major=major,
+            total_point=95,
+            is_officer=False,
+        ))
+        created += 1
+    await s.commit()
+    return {"created": created, "skipped": len(errors), "errors": errors, "default_password": DEFAULT_STUDENT_PASSWORD}
 
 
 @router.delete("/{user_id}")
@@ -331,7 +570,8 @@ async def delete_user(
         )
 
     # Soft delete: set deleted_at to current timestamp
-    user.deleted_at = func.now()
+    from datetime import datetime, timezone
+    user.deleted_at = datetime.now(timezone.utc)
     user.is_active = False
     await s.commit()
     return {"ok": True, "message": "User soft deleted successfully"}

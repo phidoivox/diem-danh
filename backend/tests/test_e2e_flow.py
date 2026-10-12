@@ -42,7 +42,8 @@ from detect_ai.modules.identity.infrastructure.models import Role, StudentProfil
 # =====================================================================
 # HẰNG SỐ DÙNG CHUNG
 # =====================================================================
-KIOSK_API_KEY = "kiosk-secret-key-2026"
+from detect_ai.shared.kernel.config import S as _S
+KIOSK_API_KEY = _S.kiosk_api_key
 KIOSK_HEADERS = {"X-Kiosk-Api-Key": KIOSK_API_KEY}
 
 STUDENT_1 = "SV001"
@@ -401,12 +402,12 @@ async def test_scenario_1_on_time_with_uniform_gets_full_point(client, test_sess
     assert att.evaluated_at is not None
     assert att.check_in_time is not None and att.check_out_time is not None
 
-    # 5. Sổ cái điểm: +2 điểm NIGHTLY_EVAL
+    # 5. Sổ cái điểm: kẹp trần 100 nên delta=0, total giữ 100
     ledger = await fetch_ledger(test_session_maker, sv1, sc1)
     assert len(ledger) == 1
-    assert ledger[0].point_delta == 2
+    assert ledger[0].point_delta == 0
     assert ledger[0].reason_code == "NIGHTLY_EVAL"
-    assert await fetch_total_point(test_session_maker, sv1) == INITIAL_POINT + 2
+    assert await fetch_total_point(test_session_maker, sv1) == INITIAL_POINT
 
     # 6. Portal sinh viên phản ánh đúng kết quả
     resp_att = await client.get("/api/v1/student/attendance", headers=auth_headers(STUDENT_1, "STUDENT"))
@@ -418,8 +419,8 @@ async def test_scenario_1_on_time_with_uniform_gets_full_point(client, test_sess
     resp_ledger = await client.get("/api/v1/student/conduct-ledger", headers=auth_headers(STUDENT_1, "STUDENT"))
     assert resp_ledger.status_code == 200
     ledger_body = resp_ledger.json()
-    assert ledger_body["total_point"] == INITIAL_POINT + 2
-    assert any(e["reason_code"] == "NIGHTLY_EVAL" and e["point_delta"] == 2 for e in ledger_body["items"])
+    assert ledger_body["total_point"] == INITIAL_POINT
+    assert any(e["reason_code"] == "NIGHTLY_EVAL" and e["point_delta"] == 0 for e in ledger_body["items"])
 
 
 # =====================================================================

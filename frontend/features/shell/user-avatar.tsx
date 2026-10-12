@@ -101,12 +101,12 @@ export function UserAvatar({
           src={resolvedSrc}
           alt={displayName}
           loading="lazy"
-          className={`${SIZE_CLASS[size]} rounded-full object-cover ring-2 ring-white shadow-sm border border-slate-200 bg-slate-100`}
+          className={`${SIZE_CLASS[size]} aspect-square shrink-0 rounded-full object-cover ring-2 ring-white shadow-sm border border-slate-200 bg-slate-100`}
         />
       ) : (
         <span
           aria-label={displayName}
-          className={`${SIZE_CLASS[size]} inline-flex items-center justify-center rounded-full bg-blue-600 text-white font-bold ring-2 ring-white shadow-sm`}
+          className={`${SIZE_CLASS[size]} aspect-square shrink-0 inline-flex items-center justify-center rounded-full bg-blue-600 text-white font-bold ring-2 ring-white shadow-sm`}
         >
           {initials}
         </span>

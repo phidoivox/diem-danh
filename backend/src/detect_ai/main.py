@@ -23,8 +23,9 @@ from .modules.identity.public import admin_users_router as admin_users
 from .modules.identity.public import auth_router as auth
 from .modules.recognition.public import apply_cpu_threads, detect_runtime, get_engine, warmup_face_engine
 from .shared.kernel.database import Session, init_db
-from .shared.kernel.errors import integrity_error_handler
+from .shared.kernel.errors import AppError, app_error_handler, integrity_error_handler
 from .shared.kernel.supabase import STORAGE_DIR
+from .shared.kernel.timeutil import VN_TZ
 from .modules.evaluation.public import run_nightly_evaluation
 
 
@@ -69,9 +70,21 @@ async def life(app: FastAPI):
         except Exception as e:
             logger.exception(f"Error in nightly evaluation cron job: {e}")
 
-    scheduler.add_job(nightly_cron_job, "cron", hour=23, minute=59)
+    async def reminder_cron_job():
+        # Nhắc lịch học ngày mai lúc 20:00 VN.
+        try:
+            from detect_ai.shared.notifications import service as notif_service
+
+            async with Session() as session:
+                res = await notif_service.send_daily_reminders(session)
+                logger.info(f"Daily reminder cron completed: {res}")
+        except Exception as e:
+            logger.exception(f"Error in daily reminder cron job: {e}")
+
+    scheduler.add_job(nightly_cron_job, "cron", hour=23, minute=59, timezone=VN_TZ)
+    scheduler.add_job(reminder_cron_job, "cron", hour=20, minute=0, timezone=VN_TZ)
     scheduler.start()
-    logger.info("detect-ai ready (Nightly evaluation cron scheduled for 23:59)")
+    logger.info("detect-ai ready (Nightly 23:59 + reminder 20:00, Asia/Ho_Chi_Minh)")
 
     yield
 
@@ -82,6 +95,7 @@ app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["*"], all
 
 
 app.add_exception_handler(IntegrityError, integrity_error_handler)
+app.add_exception_handler(AppError, app_error_handler)
 
 
 # Ảnh minh chứng / avatar khi chạy offline được ghi xuống đĩa và trả URL /static/storage/...

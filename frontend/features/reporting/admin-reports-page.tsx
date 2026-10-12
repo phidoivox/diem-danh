@@ -234,7 +234,6 @@ export default function AdminReportsPage() {
               </select>
             </div>
 
-            {/* Filter pills */}
             <div className="flex flex-wrap items-center gap-1.5">
               <button
                 onClick={() => setStatusFilter("ALL")}

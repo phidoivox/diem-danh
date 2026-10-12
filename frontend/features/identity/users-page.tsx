@@ -11,11 +11,13 @@ import { DataTable } from "@/features/shell";
 import { ConfirmDialog } from "@/features/shell";
 import { UserFormModal } from "./user-form-modal";
 import { UserDetailModal } from "./user-detail-modal";
+import { StudentImportModal } from "./student-import-modal";
 import { SearchInput } from "@/features/shell";
 import { useDebouncedValue } from "@/features/shell";
 import {
   Users,
   Plus,
+  FileSpreadsheet,
   Edit2,
   Trash2,
   Shield,
@@ -68,6 +70,7 @@ export default function AdminUsersPage() {
 
   // Modal states
   const [isUserModalOpen, setIsUserModalOpen] = useState(false);
+  const [isImportOpen, setIsImportOpen] = useState(false);
   const [editingUser, setEditingUser] = useState<AdminUser | null>(null);
   const [deletingUser, setDeletingUser] = useState<AdminUser | null>(null);
   const [viewingUser, setViewingUser] = useState<AdminUser | null>(null);
@@ -227,16 +230,25 @@ export default function AdminUsersPage() {
             </p>
           </div>
 
-          <button
-            onClick={() => {
-              setEditingUser(null);
-              setIsUserModalOpen(true);
-            }}
-            className="inline-flex items-center justify-center gap-1.5 px-3.5 py-2 text-xs font-medium text-white bg-slate-900 hover:bg-slate-800 rounded-md transition-colors cursor-pointer shadow-xs"
-          >
-            <Plus size={15} />
-            Thêm người dùng mới
-          </button>
+          <div className="flex flex-wrap items-center gap-2">
+            <button
+              onClick={() => setIsImportOpen(true)}
+              className="inline-flex items-center justify-center gap-1.5 px-3.5 py-2 text-xs font-medium text-slate-700 bg-white border border-slate-200 hover:bg-slate-50 rounded-md transition-colors cursor-pointer shadow-xs"
+            >
+              <FileSpreadsheet size={15} className="text-emerald-600" />
+              Nhập SV từ Excel
+            </button>
+            <button
+              onClick={() => {
+                setEditingUser(null);
+                setIsUserModalOpen(true);
+              }}
+              className="inline-flex items-center justify-center gap-1.5 px-3.5 py-2 text-xs font-medium text-white bg-slate-900 hover:bg-slate-800 rounded-md transition-colors cursor-pointer shadow-xs"
+            >
+              <Plus size={15} />
+              Thêm người dùng mới
+            </button>
+          </div>
         </div>
 
         {usersQuery.isError && (
@@ -327,6 +339,14 @@ export default function AdminUsersPage() {
           user={editingUser}
         />
         <UserDetailModal user={viewingUser} onClose={() => setViewingUser(null)} />
+        <StudentImportModal
+          isOpen={isImportOpen}
+          onClose={() => setIsImportOpen(false)}
+          onSuccess={(n) => {
+            queryClient.invalidateQueries({ queryKey: ["admin-users"] });
+            toast.success(`Đã nhập ${n} sinh viên (mật khẩu mặc định 123456)`);
+          }}
+        />
       </div>
     </RoleGuard>
   );

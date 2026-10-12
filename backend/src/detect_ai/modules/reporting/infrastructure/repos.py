@@ -60,3 +60,53 @@ async def list_attendances_by_schedules(
 ) -> list:
     stmt = select(Attendance).where(Attendance.schedule_id.in_(schedule_ids))
     return (await session.execute(stmt)).scalars().all()
+
+
+async def get_history_bundle(session: AsyncSession, class_id: int, student_id: int):
+    """Bundle cho build_student_history: (class, enrolled, student, schedules, atts, ledger)."""
+    class_obj = (
+        await session.execute(
+            select(Class)
+            .options(selectinload(Class.teacher), selectinload(Class.course))
+            .where(Class.id == class_id)
+        )
+    ).scalar_one_or_none()
+    enrolled = (
+        await session.execute(
+            select(ClassStudent).where(
+                ClassStudent.class_id == class_id,
+                ClassStudent.student_id == student_id,
+            )
+        )
+    ).scalar_one_or_none()
+    student = await session.get(User, student_id)
+    schedules = (
+        await session.execute(
+            select(Schedule)
+            .where(Schedule.class_id == class_id)
+            .order_by(Schedule.study_date.asc(), Schedule.start_time.asc())
+        )
+    ).scalars().all()
+    sched_ids = [s.id for s in schedules]
+    atts = []
+    if sched_ids:
+        atts = (
+            await session.execute(
+                select(Attendance).where(
+                    Attendance.student_id == student_id,
+                    Attendance.schedule_id.in_(sched_ids),
+                )
+            )
+        ).scalars().all()
+    from detect_ai.modules.evaluation.public import PointLedger
+    ledger = []
+    if sched_ids:
+        ledger = (
+            await session.execute(
+                select(PointLedger).where(
+                    PointLedger.student_id == student_id,
+                    PointLedger.schedule_id.in_(sched_ids),
+                )
+            )
+        ).scalars().all()
+    return class_obj, enrolled, student, list(schedules), list(atts), list(ledger)

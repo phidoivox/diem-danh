@@ -183,7 +183,7 @@ def make_auth_header(user_code: str, role: str) -> dict:
 
 @pytest.mark.asyncio
 async def test_case_1_full_attendance_on_time_with_uniform(test_session_maker, seeded_data):
-    """Test Case 1: Đủ in/out, đúng giờ, có đồng phục -> PRESENT, +2 điểm trong sổ cái và total_point = 102."""
+    """Test Case 1: Đủ in/out, đúng giờ, có đồng phục -> PRESENT, kẹp trần 100 nên delta=0, total_point=100."""
     schedule_id = seeded_data["schedule_id"]
     student1_id = seeded_data["student_ids"][0]
     study_date = seeded_data["study_date"]
@@ -228,7 +228,7 @@ async def test_case_1_full_attendance_on_time_with_uniform(test_session_maker, s
                 )
             )
         ).scalar_one()
-        assert ledger.point_delta == 2
+        assert ledger.point_delta == 0  # kẹp trần 100: 100+2 -> 100
         assert ledger.reason_code == "NIGHTLY_EVAL"
         assert "PRESENT" in ledger.description
 
@@ -238,7 +238,7 @@ async def test_case_1_full_attendance_on_time_with_uniform(test_session_maker, s
                 select(StudentProfile).where(StudentProfile.user_id == student1_id)
             )
         ).scalar_one()
-        assert profile.total_point == 102
+        assert profile.total_point == 100
 
 
 @pytest.mark.asyncio
@@ -486,7 +486,7 @@ async def test_case_6_teacher_manual_override_respected(test_session_maker, seed
                 )
             )
         ).scalar_one()
-        assert ledger.point_delta == 2
+        assert ledger.point_delta == 0  # kẹp trần 100: 100+2 -> 100
         assert ledger.reason_code == "NIGHTLY_EVAL"
 
         profile = (
@@ -494,7 +494,7 @@ async def test_case_6_teacher_manual_override_respected(test_session_maker, seed
                 select(StudentProfile).where(StudentProfile.user_id == student6_id)
             )
         ).scalar_one()
-        assert profile.total_point == 102
+        assert profile.total_point == 100
 
 
 @pytest.mark.asyncio
@@ -584,7 +584,7 @@ async def test_case_8_endpoint_run_now_rbac(client: AsyncClient, seeded_data):
 
 @pytest.mark.asyncio
 async def test_case_9_require_checkout_false(test_session_maker, seeded_data):
-    """Test Case 9: Khi REQUIRE_CHECKOUT=false, có check-in nhưng không có check-out vẫn được PRESENT (+2 điểm)."""
+    """Test Case 9: Khi REQUIRE_CHECKOUT=false, có check-in nhưng không có check-out vẫn được PRESENT (kẹp trần 100 nên delta=0)."""
     study_date = date(2026, 9, 18)
     schedule_id = seeded_data["schedule_id"]
     student1_id = seeded_data["student_ids"][0]
@@ -642,4 +642,4 @@ async def test_case_9_require_checkout_false(test_session_maker, seeded_data):
                 )
             )
         ).scalar_one()
-        assert ledger.point_delta == 2
+        assert ledger.point_delta == 0  # kẹp trần 100: 100+2 -> 100
