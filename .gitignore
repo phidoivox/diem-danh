@@ -78,6 +78,7 @@ Thumbs.db
 backend/bench_*_out.txt
 backend/best.pt
 *.onnx
+*.zip
 pytest-of-vohoa/
 backend/pytest-of-vohoa/
 frontend/pytest-of-vohoa/
